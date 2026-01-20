@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+       body {
+    font-family: 'Roboto', sans-serif;
+    background-color: #f0f2f5;
+    background-image: url('{{ url_for('static', filename='polymer.png') }}');
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    background-position: center;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+body::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.4); /* Overlay with more transparency */
+    z-index: -1;
+}
+
+.container {
+    text-align: center;
+    padding: 40px;
+    background-color: rgba(255, 255, 255, 0.9); /* Less transparent */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-radius: 12px;
+    max-width: 800px;
+    margin: 0 20px;
+}
+
+        .container h1 {
+            font-size: 36px;
+            margin-bottom: 10px;
+            color: #2c3e50;
+            font-weight: 500;
+        }
+        .date-time {
+            margin-bottom: 40px;
+            color: #666;
+            font-size: 16px;
+        }
+        .status {
+            margin-bottom: 40px;
+            color: #333;
+            font-size: 18px;
+        }
+        .icons-container {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .icon-wrapper {
+            text-align: center;
+            margin: 20px;
+        }
+        .icon {
+            width: 150px;
+            height: 150px;
+            padding: 20px;
+            background-color: #e0e0e0;
+            border-radius: 50%;
+            transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+        }
+        .icon-wrapper a {
+            text-decoration: none;
+            color: #555;
+        }
+        .icon-wrapper a:hover .icon {
+            transform: scale(1.1) rotate(0deg); /* Rotation on hover */
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        .icon-wrapper p {
+            margin-top: 15px;
+            font-size: 18px;
+            font-weight: 500;
+            color: #333;
+        }
+        .measurement-button {
+            display: inline-block;
+            padding: 12px 24px;
+            font-size: 18px;
+            color: #fff;
+            background: linear-gradient(45deg, #3498db, #8e44ad); /* Gradient background */
+            border: none;
+            border-radius: 10px; /* Rounded corners */
+            cursor: pointer;
+            transition: background 0.3s ease-in-out, transform 0.3s ease-in-out;
+            margin-top: 20px;
+        }
+        .measurement-button:hover {
+            transform: translateY(-5px); /* Lift on hover */
+            background: linear-gradient(45deg, #2980b9, #6c3483); /* Gradient change on hover */
+        }
+        .measurement-results {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-left: 5px solid #3498db;
+            border-radius: 4px;
+            color: #34495e;
+            text-align: left;
+            display: none;
+        }
+        
+        .chart-container {
+            width: 90%;
+            max-width: 1200px;
+            height: 600px;
+            margin: auto;
+        }
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+        
+        
+        }
+        @media (max-width: 768px) {
+            .icon {
+                width: 120px;
+                height: 120px;
+            }
+            .icon-wrapper p {
+                font-size: 16px;
+            }
+        }
+    </style>
+    
+<script>
+     function updateDateTime() {
+            const now = new Date();
+            const dateTimeString = now.toLocaleString();
+            document.getElementById('date-time').textContent = dateTimeString;
+        }
+        setInterval(updateDateTime, 1000);
+
+        function updateStatus() {
+            fetch('/status')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('pump-status').textContent = data.pump_status ? 'Pump is ON' : 'Pump is OFF';
+                    document.getElementById('measurement-status').textContent = data.measurement_status ? 'Measurement in progress' : 'No measurement';
+                });
+        }
+        setInterval(updateStatus, 2000);
+</script>
+
+</head>
+
+<body onload="updateDateTime(); updateStatus();">
+    
+
+    <script>
+        
+        let phChart;
+        let isMeasuring = false;
+        let updateInterval;
+
+        async function takeMeasurement() 
+        {
+            const button = document.getElementById('take-measurement');
+            const measurementResults = document.getElementById('measurement-results');
+
+            try 
+            {
+                button.innerText = 'Measuring...';
+                button.disabled = true;
+                isMeasuring = true;
+
+                // Fetch conductivity measurement
+        fetch('/measure_conductivity')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(conductivityData => {
+                console.log("Conductivity Data:", conductivityData);
+
+                // Calculate mean & std deviation inside this block
+                const averageConductivity = conductivityData.average_conductivity?.toFixed(2) || 'N/A';
+                const stdDevConductivity = conductivityData.std_dev_conductivity?.toFixed(3) || 'N/A';
+
+                document.getElementById('measurement-results').innerHTML = `
+                    <p><strong>Stabilized Conductivity:</strong> ${averageConductivity} µS/cm</p>
+                    <p><strong>Standard Deviation (last 10s):</strong> ${stdDevConductivity} µS/cm</p>
+                `;
+            })
+            .catch(error => {
+                console.error('Error fetching conductivity data:', error);
+                document.getElementById('measurement-results').innerHTML = `<p>Error: ${error.message}</p>`;
+            });
+
+
+                // Start fetching pH data dynamically
+                
+                function updateChart(newData) 
+                {
+                    if (!phChart) 
+                        {
+                            const ctx = document.getElementById('phChart').getContext('2d');
+                            phChart = new Chart(ctx, 
+                            {
+                                type: 'line',
+                                data: 
+                                {
+                                    labels: newData.map(entry => entry.time),
+                                    datasets: [{
+                                                label: 'pH Over Time',
+                                                data: newData.map(entry => entry.ph),
+                                                borderColor: 'blue',
+                                                borderWidth: 2,
+                                                pointRadius: 2,
+                                                fill: false
+                                                }]
+                                },
+                                options: {
+                                            responsive: true,
+                                            maintainAspectRatio: false,
+                                            scales: {
+                                                        x: { title: { display: true, text: 'Time (s)' } },
+                                                        y: { title: { display: true, text: 'pH' } }
+                                                    }
+                                        }
+                            });
+                        }   
+            
+                        else 
+                        {
+                            phChart.data.labels = newData.map(entry => entry.time);
+                            phChart.data.datasets[0].data = newData.map(entry => entry.ph);
+                            phChart.update();
+                        }
+                    }
+                startLiveUpdate();
+                
+                async function fetchData() 
+                {
+                    try 
+                    {
+                        const response = await fetch('/get_ph_data');
+                        const data = await response.json();
+                        return data.ph_data;
+                    } 
+                    catch (error) 
+                    {
+                        console.error('Error fetching pH data:', error);
+                        return [];
+                    }
+                }
+
+                function updateChart(newData) 
+                {
+                    if (!phChart) 
+                        {
+                            const ctx = document.getElementById('phChart').getContext('2d');
+                            phChart = new Chart(ctx, 
+                            {
+                                type: 'line',
+                                data: 
+                                {
+                                    labels: newData.map(entry => entry.time),
+                                    datasets: [{
+                                                label: 'pH Over Time',
+                                                data: newData.map(entry => entry.ph),
+                                                borderColor: 'blue',
+                                                borderWidth: 2,
+                                                pointRadius: 2,
+                                                fill: false
+                                                }]
+                                },
+                                options: {
+                                            responsive: true,
+                                            maintainAspectRatio: false,
+                                            scales: {
+                                                        x: { title: { display: true, text: 'Time (s)' } },
+                                                        y: { title: { display: true, text: 'pH' } }
+                                                    }
+                                        }
+                            });
+                        }   
+            
+                        else 
+                        {
+                            phChart.data.labels = newData.map(entry => entry.time);
+                            phChart.data.datasets[0].data = newData.map(entry => entry.ph);
+                            phChart.update();
+                        }
+                    }
+
+            function startLiveUpdate() {
+            setInterval(async () => {
+                const newData = await fetchData();
+                updateChart(newData);
+            }, 1000); // Update every 1 second
+        }
+        
+
+
+            } 
+            
+            catch (error) 
+            {
+                console.error('Error taking measurement:', error);
+                measurementResults.innerHTML = `<p>Error taking measurement: ${error.message}</p>`;
+            } finally {
+                button.innerText = 'Measure Single Conductivity';
+                button.disabled = false;
+                isMeasuring = false;
+            }
+        }
+
+        
+    </script>
+
+
+    <div class="container">
+        <h1>Welcome to the Roumeli Lab Autotitrator Application</h1>
+        <div class="date-time" id="date-time"></div>
+        <div class="status">
+            <div id="pump-status">Checking pump status...</div>
+            <div id="measurement-status">Checking measurement status...</div>
+        </div>
+
+        <div class="icons-container">
+            <div class="icon-wrapper">
+                <a href="/calibration">
+                    <img src="{{ url_for('static', filename='Calibration.png') }}" alt="Calibration" class="icon">
+                    <p>Calibration</p>
+                </a>
+            </div>
+            <div class="icon-wrapper">
+                <a href="/measurement">
+                    <img src="{{ url_for('static', filename='Measurement.png') }}" alt="Measurement" class="icon">
+                    <p>Measurement</p>
+                </a>
+            </div>
+            <div class="icon-wrapper">
+                <a href="/database">
+                    <img src="{{ url_for('static', filename='Database.png') }}" alt="Database" class="icon">
+                    <p>Database</p>
+                </a>
+            </div>
+        </div>
+        
+          <!-- Start and Stop Pump Buttons -->
+        <div style="margin-top: 30px;">
+            <button id="start-pump" class="measurement-button" onclick="controlPump('start')">Start Pump</button>
+            <button id="stop-pump" class="measurement-button" onclick="controlPump('stop')">Stop Pump</button>
+        </div>
+        
+
+        <button id="take-measurement" class="measurement-button" onclick="takeMeasurement()">Measure Single Conductivity</button>
+        
+        <div id="measurement-results"></div>
+        
+          <div class="chart-container">
+        <canvas id="phChart"></canvas>
+    </div>
+
+    </div>
+    
+  
+
+
+<!-- Pump control script -->
+<script>
+    async function controlPump(action) {
+        const buttonStart = document.getElementById('start-pump');
+        const buttonStop = document.getElementById('stop-pump');
+
+        try {
+            // Disable buttons during operation
+            buttonStart.disabled = true;
+            buttonStop.disabled = true;
+
+            let url = '';
+            if (action === 'start') {
+                url = '/start_pump';
+            } else if (action === 'stop') {
+                url = '/stop_pump';
+            }
+
+            const response = await fetch(url, {
+                method: 'POST'
+            });
+            const data = await response.json();
+
+            if (data.error) {
+                alert(`Error: ${data.error}`);
+            } else {
+                alert(data.message);
+            }
+        } catch (error) {
+            console.error(`Error controlling pump: ${error.message}`);
+            alert(`Error: ${error.message}`);
+        } finally {
+            // Re-enable buttons after operation
+            buttonStart.disabled = false;
+            buttonStop.disabled = false;
+        }
+    }
+</script>
+
+</body>
+</html>

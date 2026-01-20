@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>pH Stabilization Graph</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: #f0f2f5;
+            text-align: center;
+            padding: 20px;
+        }
+        .chart-container {
+            width: 90%;
+            max-width: 1200px;
+            height: 600px;
+            margin: auto;
+        }
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+        .measurement-button {
+            margin: 20px;
+            padding: 10px 20px;
+            font-size: 18px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>pH Stabilization Graph</h1>
+    
+    <button id="measure-ph" class="measurement-button" onclick="startMeasurement()">Start pH Measurement</button>
+    
+    <div class="chart-container">
+        <canvas id="phChart"></canvas>
+    </div>
+
+    <script>
+        let phChart;
+        let phData = [];
+
+        async function startMeasurement() {
+            document.getElementById('measure-ph').disabled = true;
+
+            // Start measurement in the background
+            fetch('/measure_conductivity');
+
+            // Begin live updating the graph
+            startLiveUpdate();
+        }
+
+        async function fetchData() {
+            const response = await fetch('/get_ph_data');
+            const data = await response.json();
+            return data.ph_data;
+        }
+
+        function updateChart(newData) {
+            if (!phChart) {
+                const ctx = document.getElementById('phChart').getContext('2d');
+                phChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: newData.map(entry => entry.time),
+                        datasets: [{
+                            label: 'pH Over Time',
+                            data: newData.map(entry => entry.ph),
+                            borderColor: 'blue',
+                            borderWidth: 2,
+                            pointRadius: 2,
+                            fill: false
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { title: { display: true, text: 'Time (s)' } },
+                            y: { title: { display: true, text: 'pH' } }
+                        }
+                    }
+                });
+            } else {
+                phChart.data.labels = newData.map(entry => entry.time);
+                phChart.data.datasets[0].data = newData.map(entry => entry.ph);
+                phChart.update();
+            }
+        }
+
+        function startLiveUpdate() {
+            setInterval(async () => {
+                const newData = await fetchData();
+                updateChart(newData);
+            }, 1000); // Update every 1 second
+        }
+    </script>
+</body>
+</html>
+
+
