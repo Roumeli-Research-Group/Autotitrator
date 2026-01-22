@@ -1,0 +1,296 @@
+{% extends "layout.html" %}
+
+{% block title %}Database - Autotitrator{% endblock %}
+{% block heading %}Titration Database{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header" style="flex-wrap: wrap; gap: 1rem;">
+        <h2 class="card-title" id="viewTitle">Projects</h2>
+
+        <div
+            style="flex: 1; min-width: 200px; display: flex; gap: 1rem; justify-content: flex-end; align-items: center;">
+            <button id="backBtn" onclick="showProjects()" class="btn btn-outline hidden">
+                ← Back to Projects
+            </button>
+
+            <button id="newProjectBtn" onclick="showAddProjectModal()" class="btn btn-primary">
+                + New Project
+            </button>
+        </div>
+    </div>
+
+    <!-- Project List View -->
+    <div id="projectsView" class="table-container">
+        <div class="grid-list" id="projectGrid">
+            {% for project, files in projects.items() %}
+            <div class="project-card" onclick="openProject('{{ project }}')">
+                <div class="folder-icon">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                </div>
+                <div class="project-info">
+                    <h3 class="project-name">{{ project }}</h3>
+                    <p class="file-count">{{ files|length }} files</p>
+                </div>
+                <div class="project-actions" onclick="event.stopPropagation()">
+                    {% if project != 'Default' %}
+                    <button onclick="deleteProject('{{ project }}')" class="btn-icon danger" title="Delete Project">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2">
+                            </path>
+                        </svg>
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- File List View (Hidden initially) -->
+    <div id="filesView" class="table-container hidden">
+        <table class="table" id="filesTable">
+            <thead>
+                <tr>
+                    <th>Experiment Name</th>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="filesTableBody">
+                <!-- Populated by JS -->
+            </tbody>
+        </table>
+        <div id="noFilesMsg" class="text-center text-secondary mt-4 hidden">
+            No files in this project.
+        </div>
+    </div>
+</div>
+
+<!-- Add Project Modal -->
+<div id="projectModal" class="modal-overlay">
+    <div class="modal">
+        <h3 class="modal-title">New Project</h3>
+        <div class="form-group">
+            <label class="form-label">Project Name</label>
+            <input type="text" id="newProjectName" class="form-input" placeholder="Enter project name...">
+        </div>
+        <div class="modal-actions">
+            <button onclick="closeAddProjectModal()" class="btn btn-outline">Cancel</button>
+            <button onclick="confirmAddProject()" class="btn btn-primary">Create</button>
+        </div>
+    </div>
+</div>
+
+<style>
+    .grid-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 1.5rem;
+        padding: 1rem;
+    }
+
+    .project-card {
+        background: #f8fafc;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        padding: 1.5rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        position: relative;
+    }
+
+    .project-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        border-color: var(--primary-color);
+    }
+
+    .folder-icon {
+        color: var(--primary-color);
+        opacity: 0.8;
+    }
+
+    .project-info {
+        flex: 1;
+    }
+
+    .project-name {
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+        color: var(--text-primary);
+    }
+
+    .file-count {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+    }
+
+    .project-actions {
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+
+    .project-card:hover .project-actions {
+        opacity: 1;
+    }
+
+    .btn-icon.danger {
+        color: var(--danger-color);
+        background: none;
+        border: none;
+        padding: 0.5rem;
+        cursor: pointer;
+        border-radius: 4px;
+    }
+
+    .btn-icon.danger:hover {
+        background: #fef2f2;
+    }
+</style>
+
+<script>
+    // Data passed from backend
+    const projectsData = {{ projects | tojson }};
+
+    function showProjects() {
+        document.getElementById('projectsView').classList.remove('hidden');
+        document.getElementById('filesView').classList.add('hidden');
+        document.getElementById('backBtn').classList.add('hidden');
+        document.getElementById('newProjectBtn').classList.remove('hidden');
+        document.getElementById('viewTitle').textContent = 'Projects';
+    }
+
+    function openProject(projectName) {
+        const files = projectsData[projectName] || [];
+        const tbody = document.getElementById('filesTableBody');
+        tbody.innerHTML = '';
+
+        if (files.length === 0) {
+            document.getElementById('noFilesMsg').classList.remove('hidden');
+            document.getElementById('filesTable').classList.add('hidden');
+        } else {
+            document.getElementById('noFilesMsg').classList.add('hidden');
+            document.getElementById('filesTable').classList.remove('hidden');
+
+            files.forEach(f => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="name-cell">${f.experiment_name}</td>
+                    <td>${f.date}</td>
+                    <td>${f.time}</td>
+                    <td style="display: flex; gap: 0.5rem;">
+                        <a href="/download/${f.filename}" class="btn btn-outline" style="padding: 0.25rem 0.75rem; font-size: 0.75rem;">
+                            Download CSV
+                        </a>
+                         <button onclick="deleteFile('${f.filename}')" class="btn btn-outline" style="padding: 0.25rem 0.5rem; color: var(--danger-color); border-color: var(--border-color);" title="Delete File">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                        </button>
+                    </td>
+                 `;
+                tbody.appendChild(row);
+            });
+        }
+
+        document.getElementById('projectsView').classList.add('hidden');
+        document.getElementById('filesView').classList.remove('hidden');
+        document.getElementById('backBtn').classList.remove('hidden');
+        document.getElementById('newProjectBtn').classList.add('hidden');
+        document.getElementById('viewTitle').textContent = projectName;
+    }
+
+    // Modal
+    const modal = document.getElementById('projectModal');
+    const input = document.getElementById('newProjectName');
+
+    function showAddProjectModal() {
+        modal.classList.add('active');
+        input.focus();
+    }
+    function closeAddProjectModal() {
+        modal.classList.remove('active');
+        input.value = '';
+    }
+
+    async function confirmAddProject() {
+        const name = input.value.trim();
+        if (!name) return;
+
+        try {
+            const res = await fetch('/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            const data = await res.json();
+
+            if (res.ok) {
+                location.reload();
+            } else {
+                alert(data.error || 'Failed to create project');
+            }
+        } catch (e) {
+            alert('Network error');
+        }
+    }
+
+    async function deleteProject(name) {
+        if (!confirm(`Are you sure you want to delete project: ${name}? \nWARNING: All files inside will be deleted!`)) return;
+
+        try {
+            const res = await fetch(`/api/projects/${name}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (res.ok) {
+                location.reload();
+            } else {
+                alert(data.error || 'Failed to delete project');
+            }
+        } catch (e) {
+            alert('Network error');
+        }
+    }
+
+    async function deleteFile(filename) {
+        if (!confirm(`Permanently delete file: ${filename}?`)) return;
+
+        try {
+            const res = await fetch(`/api/titrations/${filename}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (res.ok) {
+                // Determine project name from filename "Project/file.csv"
+                const parts = filename.split('/');
+                const project = parts[0];
+
+                // Remove from local data to avoid full reload (better UX)
+                if (projectsData[project]) {
+                    projectsData[project] = projectsData[project].filter(f => f.filename !== filename);
+                    openProject(project); // Re-render table
+                } else {
+                    location.reload();
+                }
+            } else {
+                alert(data.error || 'Failed to delete file');
+            }
+        } catch (e) {
+            alert('Network error');
+        }
+    }
+
+    // Enter key support for modal
+    input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') confirmAddProject();
+    });
+
+</script>
+{% endblock %}

@@ -1,0 +1,117 @@
+{% extends "layout.html" %}
+
+{% block title %}Settings - Autotitrator{% endblock %}
+{% block heading %}System Settings{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Configuration</h2>
+    </div>
+
+    <div class="alert alert-info" style="margin-bottom: 2rem;">
+        These settings are for **Production** mode. Development mode (TITRATOR_ENV=DEV) will override timing values for
+        speed.
+    </div>
+
+    <form id="settingsForm" onsubmit="saveSettings(event)">
+        <!-- Pump -->
+        <h3 style="font-size: 1.1rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; margin-bottom: 1rem;">Pump
+            Configuration</h3>
+        <div class="form-group">
+            <label class="form-label" for="FLOW_RATE">Flow Rate (mL/s)</label>
+            <input type="number" step="0.0001" id="FLOW_RATE" name="FLOW_RATE" class="form-input" required>
+            <small class="text-secondary">Note: Use Pump Calibration wizard for precise measurement.</small>
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="VOLUME_PER_STEP">Volume per Step (mL)</label>
+            <input type="number" step="0.1" id="VOLUME_PER_STEP" name="VOLUME_PER_STEP" class="form-input" required>
+        </div>
+
+        <!-- Timings -->
+        <h3
+            style="font-size: 1.1rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; margin-bottom: 1rem; margin-top: 2rem;">
+            Titration Timings</h3>
+        <div class="form-group">
+            <label class="form-label" for="TITRATION_WAIT_TIME">Wait After Dose (seconds)</label>
+            <input type="number" step="1" id="TITRATION_WAIT_TIME" name="TITRATION_WAIT_TIME" class="form-input"
+                required>
+            <small class="text-secondary">Mixing time after each pump dose.</small>
+        </div>
+
+        <!-- Measurement -->
+        <h3
+            style="font-size: 1.1rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; margin-bottom: 1rem; margin-top: 2rem;">
+            Conductivity Measurement</h3>
+        <div class="form-group">
+            <label class="form-label" for="CONDUCTIVITY_READINGS">Samples per Reading</label>
+            <input type="number" step="1" id="CONDUCTIVITY_READINGS" name="CONDUCTIVITY_READINGS" class="form-input"
+                required>
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="CONDUCTIVITY_READ_DELAY">Delay Between Samples (seconds)</label>
+            <input type="number" step="0.1" id="CONDUCTIVITY_READ_DELAY" name="CONDUCTIVITY_READ_DELAY"
+                class="form-input" required>
+        </div>
+
+        <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+            <button type="submit" class="btn btn-primary" style="flex: 2;">Save Configuration</button>
+            <button type="button" onclick="resetDefaults()" class="btn btn-danger" style="flex: 1;">Restore
+                Defaults</button>
+        </div>
+    </form>
+</div>
+
+<script>
+    async function loadSettings() {
+        try {
+            const res = await fetch('/api/settings');
+            const data = await res.json();
+
+            for (const key in data) {
+                const el = document.getElementById(key);
+                if (el) el.value = data[key];
+            }
+        } catch (e) {
+            alert("Failed to load settings");
+        }
+    }
+
+    async function saveSettings(event) {
+        event.preventDefault();
+        const form = document.getElementById('settingsForm');
+        const formData = new FormData(form);
+        const jsonData = {};
+
+        formData.forEach((value, key) => {
+            jsonData[key] = parseFloat(value);
+        });
+
+        try {
+            await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(jsonData)
+            });
+            alert("Settings saved!");
+            loadSettings(); // Reload to confirm
+        } catch (e) {
+            alert("Failed to save settings");
+        }
+    }
+
+    async function resetDefaults() {
+        if (!confirm("Are you sure you want to restore system defaults? This will overwrite your flow rate calibration.")) return;
+
+        try {
+            await fetch('/api/settings/reset', { method: 'POST' });
+            alert("System defaults restored.");
+            loadSettings();
+        } catch (e) {
+            alert("Failed to reset settings");
+        }
+    }
+
+    loadSettings();
+</script>
+{% endblock %}

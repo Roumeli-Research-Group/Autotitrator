@@ -1,0 +1,73 @@
+{% extends "layout.html" %}
+
+{% block title %}Dashboard - Autotitrator{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="dashboard-grid"
+    style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+
+    <!-- Quick Actions Card -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Quick Actions</h2>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+            <a href="/measurement" class="btn btn-primary full-width">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                </svg>
+                New Titration
+            </a>
+            <a href="/calibration" class="btn btn-outline full-width">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path
+                        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+                    </path>
+                </svg>
+                Calibrate Probe
+            </a>
+        </div>
+    </div>
+
+    <!-- Pump Control Card -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Manual Pump Control</h2>
+        </div>
+        <p class="text-secondary mb-4">Directly control the peristaltic pump for maintenance or priming.</p>
+        <div class="flex-row">
+            <button onclick="controlPump('start')" class="btn btn-success full-width"
+                style="background-color: var(--success-color); color: white;">
+                Start Pump
+            </button>
+            <button onclick="controlPump('stop')" class="btn btn-danger full-width">
+                Stop Pump
+            </button>
+        </div>
+    </div>
+
+    <!-- Recent Data Preview (Placeholder) -->
+    <div class="card" style="grid-column: 1 / -1;">
+        <div class="card-header">
+            <h2 class="card-title">System Overview</h2>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 2rem;">
+            <div class="text-center">
+                <div class="text-secondary">Current Date</div>
+                <div class="h3" id="dash-date" style="font-size: 1.5rem; font-weight: 600;">Loading...</div>
+            </div>
+            <div class="text-center">
+                <div class="text-secondary">System Status</div>
+                <div class="h3" style="font-size: 1.5rem; font-weight: 600; color: var(--success-color);">Operational
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('dash-date').textContent = new Date().toLocaleDateString();
+</script>
+{% endblock %}

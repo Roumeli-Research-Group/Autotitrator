@@ -1,0 +1,303 @@
+{% extends "layout.html" %}
+
+{% block title %}Titration & Measurement - Autotitrator{% endblock %}
+{% block heading %}Titration & Measurement{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    .split-view {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+    }
+
+    @media (max-width: 768px) {
+        .split-view {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .chart-container {
+        position: relative;
+        height: 400px;
+        width: 100%;
+    }
+</style>
+{% endblock %}
+
+
+{% block content %}
+<div class="split-view">
+    <!-- Left Column: Controls -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">New Titration Experiment</h2>
+        </div>
+
+        <form id="titrationForm" onsubmit="handleTitration(event)">
+            <div class="form-group">
+                <label class="form-label" for="project_select">Project</label>
+                <select id="project_select" name="project_name" class="form-input" style="flex: 1;">
+                    <option value="Default">Default</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="experiment_name">Experiment Name</label>
+                <input type="text" id="experiment_name" name="experiment_name" class="form-input" required
+                    placeholder="e.g. Sample_A_Run_1">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Titration Mode</label>
+                <select id="mode_select" name="mode" class="form-input" onchange="updateFormFields()">
+                    <option value="volumetric">Volumetric (Standard)</option>
+                    <option value="endpoint">Endpoint (Target pH)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Sensor</label>
+                <select id="sensor_select" name="sensor" class="form-input">
+                    <option value="ec" selected>Conductivity (EC)</option>
+                    <option value="ph">pH Probe</option>
+                </select>
+            </div>
+
+            <div id="volume_input_group" class="form-group">
+                <label class="form-label" for="volume_ml">Total Volume to Titrate (mL)</label>
+                <input type="number" id="volume_ml" name="volume_ml" class="form-input" min="0.5" step="0.5" value="60">
+            </div>
+
+            <div id="target_input_group" class="form-group hidden" style="display: none;">
+                <label class="form-label" for="target_ph">Target pH</label>
+                <input type="number" id="target_ph" name="target_ph" class="form-input" step="0.1" placeholder="7.0">
+            </div>
+
+            <button type="submit" id="startBtn" class="btn btn-outline full-width">
+                Start Titration Sequence
+            </button>
+        </form>
+    </div>
+
+    <!-- Right Column: Live Graph -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Live Data</h2>
+        </div>
+        <div class="chart-container">
+            <canvas id="liveChart"></canvas>
+        </div>
+        <div id="liveStatus" class="text-center text-secondary mt-2">
+            Ready to start...
+        </div>
+    </div>
+</div>
+
+<!-- Full Width Progress Section for Titration -->
+<div id="progressSection" class="card hidden">
+    <div class="card-header">
+        <h2 class="card-title">Titration Progress</h2>
+    </div>
+
+    <div class="progress-container">
+        <div id="progressBar" class="progress-bar"></div>
+    </div>
+
+    <div class="text-center text-secondary mb-4" id="statusText">
+        Initializing...
+    </div>
+
+    <button onclick="stopTitration()" class="btn btn-danger full-width">Emergency Stop Pump</button>
+</div>
+
+<div id="resultsSection" class="card hidden">
+    <div class="card-header">
+        <h2 class="card-title">Titration Results</h2>
+    </div>
+    <div id="resultsContent"></div>
+    <div class="mt-4">
+        <button onclick="location.reload()" class="btn btn-outline">Start New Experiment</button>
+    </div>
+</div>
+
+
+
+<script>
+    function updateFormFields() {
+        const mode = document.getElementById('mode_select').value;
+        const volGroup = document.getElementById('volume_input_group');
+        const targetGroup = document.getElementById('target_input_group');
+
+        if (mode === 'endpoint') {
+            volGroup.style.display = 'none';
+            targetGroup.style.display = 'block';
+            // Auto-select pH sensor
+            document.getElementById('sensor_select').value = 'ph';
+        } else {
+            volGroup.style.display = 'block';
+            targetGroup.style.display = 'none';
+        }
+    }
+
+    // Project Management Logic
+    async function loadProjects() {
+        try {
+            const res = await fetch('/projects');
+            const projects = await res.json();
+            const select = document.getElementById('project_select');
+            const currentVal = select.value;
+
+            select.innerHTML = '';
+            projects.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p;
+                opt.textContent = p;
+                select.appendChild(opt);
+            });
+
+            if (projects.includes(currentVal)) {
+                select.value = currentVal;
+            } else if (projects.includes('Default')) {
+                select.value = 'Default';
+            }
+        } catch (e) {
+            console.error("Failed to load projects", e);
+        }
+    }
+
+    async function stopTitration() {
+        await fetch('/api/titrate/stop', { method: 'POST' });
+        document.getElementById('statusText').textContent = "Stopping...";
+    }
+
+
+
+    // Chart Init
+    let chartInstance = null;
+    const ctx = document.getElementById('liveChart').getContext('2d');
+
+    function initChart() {
+        if (chartInstance) chartInstance.destroy();
+        chartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Reading',
+                    data: [],
+                    borderColor: '#0284c7',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+    }
+
+    async function handleTitration(event) {
+        event.preventDefault();
+
+        const form = document.getElementById('titrationForm');
+        const startBtn = document.getElementById('startBtn');
+        const progressSection = document.getElementById('progressSection');
+        const progressBar = document.getElementById('progressBar');
+        const statusText = document.getElementById('statusText');
+        const resultsSection = document.getElementById('resultsSection');
+        const liveStatus = document.getElementById('liveStatus');
+
+        startBtn.disabled = true;
+        startBtn.textContent = 'Starting...';
+        progressSection.classList.remove('hidden');
+        resultsSection.classList.add('hidden');
+
+        initChart(); // Reset Chart
+
+        const formData = new FormData(form);
+        const jsonData = Object.fromEntries(formData.entries());
+
+        try {
+            const response = await fetch('/api/titrate/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(jsonData)
+            });
+            const data = await response.json();
+
+            if (data.error) throw new Error(data.error);
+
+            startBtn.textContent = 'Running...';
+            liveStatus.textContent = "Acquiring data...";
+
+            // Poll for data
+            let pollInterval = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/titrate/data');
+                    const graphData = await res.json();
+
+                    if (Object.keys(graphData).length > 0) {
+                        const volumes = graphData['Volume (mL)'];
+                        const readings = (graphData['Mode'] === 'pH') ? graphData['pH'] : graphData['Reading'];
+
+                        // Update Chart
+                        chartInstance.data.labels = volumes;
+                        chartInstance.data.datasets[0].data = readings;
+                        chartInstance.data.datasets[0].label = (graphData['Mode'] === 'pH') ? 'pH' : 'Conductivity (µS/cm)';
+                        chartInstance.update();
+
+                        liveStatus.textContent = `Last: ${readings[readings.length - 1]?.toFixed(2) || '--'}`;
+                    }
+
+                    // Check status to stop polling
+                    const statusRes = await fetch('/api/status');
+                    const status = await statusRes.json();
+                    if (!status.running) {
+                        clearInterval(pollInterval);
+                        onTitrationComplete(jsonData.experiment_name);
+                    }
+
+                    statusText.textContent = `Running... Pump: ${status.pump ? 'ON' : 'OFF'}`;
+
+                } catch (e) {
+                    console.error(e);
+                }
+            }, 1000);
+
+        } catch (error) {
+            alert('Error: ' + error.message);
+            startBtn.disabled = false;
+            startBtn.textContent = 'Start Titration Sequence';
+            progressSection.classList.add('hidden');
+        }
+    }
+
+    function onTitrationComplete(name) {
+        const startBtn = document.getElementById('startBtn');
+        startBtn.disabled = false;
+        startBtn.textContent = 'Start Titration Sequence';
+
+        document.getElementById('statusText').textContent = 'Completed!';
+        document.getElementById('progressSection').classList.add('hidden');
+        document.getElementById('resultsSection').classList.remove('hidden');
+
+        document.getElementById('resultsContent').innerHTML = `
+                <div class="success-message" style="color: var(--success-color); margin-bottom: 1rem;">
+                    Sequence Completed Successfully
+                </div>
+                <div style="background: #f8fafc; padding: 1rem; border-radius: var(--radius-md);">
+                    <p><strong>Experiment:</strong> ${name}</p>
+                    <p><a href="/database" style="color: var(--primary-color);">View in Database</a></p>
+                </div>
+            `;
+    }
+
+
+
+
+    // Init
+    loadProjects();
+</script>
+{% endblock %}

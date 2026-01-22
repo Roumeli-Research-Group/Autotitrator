@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pump Calibration Wizard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            background: #eef1f5;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 600px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+        }
+
+        .step {
+            display: none;
+            margin-top: 20px;
+        }
+
+        .step.active {
+            display: block;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+            width: 100%;
+        }
+
+        .btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            margin-top: 5px;
+            border: 2px solid #bdc3c7;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        .status {
+            margin-top: 15px;
+            padding: 10px;
+            background: #ecf0f1;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        table {
+            width: 100%;
+            margin-top: 20px;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            text-align: center;
+        }
+
+        th {
+            background: #f8f9fa;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Pump Calibration Wizard</h1>
+
+        <!-- Step 1: Initial Setup -->
+        <div id="step-setup" class="step active">
+            <h2>Step 1: Setup</h2>
+            <p>Enter the voltage you will use for calibration.</p>
+            <label for="voltage">Voltage (V):</label>
+            <input type="number" id="voltage" step="0.1" value="12.0">
+            <button class="btn" onclick="startCalibration()">Start Calibration</button>
+        </div>
+
+        <!-- Step 2: Warmup -->
+        <div id="step-warmup" class="step">
+            <h2>Step 2: Warmup</h2>
+            <p>Running pump for 10 seconds to prime lines. Please collect waste.</p>
+            <div id="warmup-status" class="status">Waiting...</div>
+        </div>
+
+        <!-- Step 3: Measurement Loop -->
+        <div id="step-measure" class="step">
+            <h2>Step 3: Measurement <span id="current-cycle">1</span>/5</h2>
+            <p>Target Duration: <strong id="target-duration">10</strong> seconds</p>
+            <p>1. Place collection beaker.</p>
+            <p>2. Click 'Run Pump'.</p>
+            <button class="btn" id="btn-run-pump" onclick="runPumpMeasurement()">Run Pump</button>
+            <div id="measure-status" class="status" style="display:none">Pumping...</div>
+
+            <div id="input-area" style="display:none; margin-top: 15px;">
+                <label for="volume-input">Enter Volume Eluted (mL):</label>
+                <input type="number" id="volume-input" step="0.01">
+                <button class="btn" onclick="recordMeasurement()">Next</button>
+            </div>
+        </div>
+
+        <!-- Step 4: Results -->
+        <div id="step-results" class="step">
+            <h2>Calibration Complete</h2>
+            <p>Calculated Flow Rate:</p>
+            <h1 id="final-flow-rate">...</h1>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time (s)</th>
+                        <th>Volume (mL)</th>
+                        <th>Rate (mL/s)</th>
+                    </tr>
+                </thead>
+                <tbody id="results-table"></tbody>
+            </table>
+            <button class="btn" onclick="location.reload()">Restart</button>
+        </div>
+    </div>
+
+    <script>
+        const durations = [10, 20, 30, 40, 50];
+        let currentIdx = 0;
+        let measurements = [];
+        let voltage = 12.0;
+
+        function showStep(id) {
+            document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+        }
+
+        function startCalibration() {
+            voltage = parseFloat(document.getElementById('voltage').value);
+            if (!voltage) return alert("Enter valid voltage");
+
+            showStep('step-warmup');
+            runWarmup();
+        }
+
+        async function runWarmup() {
+            const status = document.getElementById('warmup-status');
+            status.innerText = "Running Warmup (10s)...";
+
+            try {
+                await fetch('/start_pump_duration', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ duration: 10 })
+                });
+                status.innerText = "Warmup Complete. Proceeding...";
+                setTimeout(() => setupMeasurementStep(), 2000);
+            } catch (e) {
+                alert("Error running pump: " + e);
+            }
+        }
+
+        function setupMeasurementStep() {
+            if (currentIdx >= durations.length) {
+                finalizeCalibration();
+                return;
+            }
+            showStep('step-measure');
+            document.getElementById('current-cycle').innerText = currentIdx + 1;
+            document.getElementById('target-duration').innerText = durations[currentIdx];
+            document.getElementById('btn-run-pump').style.display = 'block';
+            document.getElementById('measure-status').style.display = 'none';
+            document.getElementById('input-area').style.display = 'none';
+            document.getElementById('volume-input').value = '';
+        }
+
+        async function runPumpMeasurement() {
+            const btn = document.getElementById('btn-run-pump');
+            const status = document.getElementById('measure-status');
+            const duration = durations[currentIdx];
+
+            btn.style.display = 'none';
+            status.style.display = 'block';
+            status.innerText = `Running for ${duration} seconds...`;
+
+            try {
+                await fetch('/start_pump_duration', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ duration: duration })
+                });
+
+                status.style.display = 'none';
+                document.getElementById('input-area').style.display = 'block';
+            } catch (e) {
+                alert("Error: " + e);
+                btn.style.display = 'block';
+                status.style.display = 'none';
+            }
+        }
+
+        function recordMeasurement() {
+            const vol = parseFloat(document.getElementById('volume-input').value);
+            if (!vol || vol <= 0) return alert("Enter valid volume");
+
+            measurements.push({
+                time: durations[currentIdx],
+                volume: vol
+            });
+
+            currentIdx++;
+            setupMeasurementStep();
+        }
+
+        async function finalizeCalibration() {
+            showStep('step-results');
+            const tbody = document.getElementById('results-table');
+            let totalRate = 0;
+
+            measurements.forEach(m => {
+                const rate = m.volume / m.time;
+                totalRate += rate;
+                const row = `<tr><td>${m.time}</td><td>${m.volume}</td><td>${rate.toFixed(4)}</td></tr>`;
+                tbody.innerHTML += row;
+            });
+
+            const avgRate = totalRate / measurements.length;
+            document.getElementById('final-flow-rate').innerText = `${avgRate.toFixed(4)} mL/s`;
+
+            // Send to server
+            await fetch('/update_flow_rate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ flow_rate: avgRate, voltage: voltage })
+            });
+            alert("System Flow Rate Updated Successfully!");
+        }
+    </script>
+</body>
+
+</html>

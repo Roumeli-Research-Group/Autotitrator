@@ -1,0 +1,107 @@
+{% extends "layout.html" %}
+
+{% block title %}Calibration - Autotitrator{% endblock %}
+{% block heading %}Calibration{% endblock %}
+
+{% block content %}
+<div class="dashboard-grid"
+    style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1.5rem;">
+
+    <!-- Conductivity Calibration -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Conductivity Probe Calibration</h2>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Current Reading</label>
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <div id="live-conductivity" style="font-size: 1.5rem; font-weight: 600;">--</div>
+                <span class="text-secondary">µS/cm</span>
+            </div>
+        </div>
+
+        <div style="display: grid; gap: 1rem; margin-top: 2rem;">
+            <button onclick="calibrate('dry')" class="btn btn-outline full-width">
+                Calibrate Dry (Zero)
+            </button>
+
+            <form onsubmit="calibrateWithVal(event, 'low')" style="display: flex; gap: 0.5rem;">
+                <input type="number" id="cal-low" class="form-input" placeholder="Low Value (e.g. 12880)" required>
+                <button type="submit" class="btn btn-primary">Calibrate Low</button>
+            </form>
+
+            <form onsubmit="calibrateWithVal(event, 'high')" style="display: flex; gap: 0.5rem;">
+                <input type="number" id="cal-high" class="form-input" placeholder="High Value (e.g. 80000)" required>
+                <button type="submit" class="btn btn-primary">Calibrate High</button>
+            </form>
+        </div>
+
+        <div id="cal-status" class="mt-4 text-secondary"></div>
+    </div>
+
+    <!-- Pump Calibration (Link) -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Pump Calibration</h2>
+        </div>
+        <p class="text-secondary mb-4">Use the Pump Calibration wizard to calculate and update the flow rate.</p>
+        <a href="/pump_calibration" class="btn btn-outline full-width">
+            Open Pump Calibration Wizard
+        </a>
+    </div>
+</div>
+
+<script>
+    // Poll for live conductivity reading
+    setInterval(async () => {
+        try {
+            const res = await fetch('/get_conductivity_data');
+            const data = await res.json();
+            if (data.conductivity !== undefined) {
+                document.getElementById('live-conductivity').textContent = data.conductivity;
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }, 1000);
+
+    async function calibrate(type) {
+        if (!confirm(`Perform ${type} calibration? Ensure probe is ready.`)) return;
+        runCal(type, null);
+    }
+
+    async function calibrateWithVal(event, type) {
+        event.preventDefault();
+        const val = document.getElementById('cal-' + type).value;
+        if (!confirm(`Perform ${type} calibration with value ${val}?`)) return;
+        runCal(type, val);
+    }
+
+    async function runCal(type, value) {
+        const statusEl = document.getElementById('cal-status');
+        statusEl.textContent = 'Calibrating...';
+        statusEl.className = 'mt-4 text-primary';
+
+        try {
+            const res = await fetch('/start_conductivity_calibration', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type, value })
+            });
+            const data = await res.json();
+
+            if (data.error) {
+                statusEl.textContent = 'Error: ' + data.error;
+                statusEl.className = 'mt-4 text-danger';
+            } else {
+                statusEl.textContent = 'Success: ' + data.message;
+                statusEl.className = 'mt-4 text-success';
+            }
+        } catch (e) {
+            statusEl.textContent = 'Network Error';
+            statusEl.className = 'mt-4 text-danger';
+        }
+    }
+</script>
+{% endblock %}

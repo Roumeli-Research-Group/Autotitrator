@@ -1,0 +1,127 @@
+{% extends "layout.html" %}
+
+{% block title %}Database - Autotitrator{% endblock %}
+{% block heading %}Titration Database{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header" style="flex-wrap: wrap; gap: 1rem;">
+        <h2 class="card-title">Recorded Titrations</h2>
+
+        <div style="flex: 1; min-width: 200px; display: flex; gap: 1rem; justify-content: flex-end;">
+            <input type="text" id="searchInput" placeholder="Search experiments..." class="form-input"
+                style="max-width: 300px;" onkeyup="filterTable()">
+            <select id="sortSelect" class="form-input" style="max-width: 200px;" onchange="sortTable()">
+                <option value="date-desc">Newest First</option>
+                <option value="date-asc">Oldest First</option>
+                <option value="project-asc">Project (A-Z)</option>
+                <option value="project-desc">Project (Z-A)</option>
+                <option value="name-asc">Name (A-Z)</option>
+                <option value="name-desc">Name (Z-A)</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table class="table" id="dataTable">
+            <thead>
+                <tr>
+                    <th>Project</th>
+                    <th>Experiment Name</th>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in titrations %}
+                <tr class="data-row">
+                    <td class="project-cell"><strong>{{ t.project_name }}</strong></td>
+                    <td class="name-cell">{{ t.experiment_name }}</td>
+                    <td class="date-cell" data-timestamp="{{ t.timestamp_obj }}">{{ t.date }}</td>
+                    <td>{{ t.time }}</td>
+                    <td>
+                        <a href="/download/{{ t.filename }}" class="btn btn-outline"
+                            style="padding: 0.25rem 0.75rem; font-size: 0.75rem;">
+                            <!-- Download Icon -->
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" style="margin-right: 0.25rem;">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            Download CSV
+                        </a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="text-center text-secondary">No records found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div id="noResults" class="text-center text-secondary mt-4 hidden">
+            No matching records found.
+        </div>
+    </div>
+</div>
+
+<script>
+    function filterTable() {
+        const input = document.getElementById('searchInput');
+        const filter = input.value.toLowerCase();
+        const rows = document.getElementsByClassName('data-row');
+        let hasVisible = false;
+
+        for (let row of rows) {
+            const nameCell = row.getElementsByClassName('name-cell')[0];
+            const name = nameCell.textContent || nameCell.innerText;
+            const projectCell = row.getElementsByClassName('project-cell')[0];
+            const project = projectCell.textContent || projectCell.innerText;
+
+            if (name.toLowerCase().indexOf(filter) > -1 || project.toLowerCase().indexOf(filter) > -1) {
+                row.style.display = "";
+                hasVisible = true;
+            } else {
+                row.style.display = "none";
+            }
+        }
+
+        document.getElementById('noResults').style.display = hasVisible ? 'none' : 'block';
+    }
+
+    function sortTable() {
+        const sortValue = document.getElementById('sortSelect').value;
+        const table = document.getElementById('dataTable');
+        const tbody = table.getElementsByTagName('tbody')[0];
+        const rows = Array.from(document.getElementsByClassName('data-row'));
+
+        rows.sort((a, b) => {
+            if (sortValue.includes('date')) {
+                const dateA = a.querySelector('.date-cell').innerText;
+                const timeA = a.children[3].innerText; // Time is now 4th col (index 3)
+                const dateB = b.querySelector('.date-cell').innerText;
+                const timeB = b.children[3].innerText; // Time is now 4th col (index 3)
+
+                const dtA = dateA + 'T' + timeA;
+                const dtB = dateB + 'T' + timeB;
+
+                return sortValue === 'date-asc' ? dtA.localeCompare(dtB) : dtB.localeCompare(dtA);
+            } else if (sortValue.includes('project')) {
+                const projA = a.querySelector('.project-cell').innerText.toLowerCase();
+                const projB = b.querySelector('.project-cell').innerText.toLowerCase();
+
+                return sortValue === 'project-asc' ? projA.localeCompare(projB) : projB.localeCompare(projA);
+            } else {
+                const nameA = a.getElementsByClassName('name-cell')[0].innerText.toLowerCase();
+                const nameB = b.getElementsByClassName('name-cell')[0].innerText.toLowerCase();
+
+                return sortValue === 'name-asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
+            }
+        });
+
+        rows.forEach(row => tbody.appendChild(row));
+    }
+</script>
+{% endblock %}

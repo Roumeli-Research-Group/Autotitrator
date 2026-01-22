@@ -1,0 +1,366 @@
+{% extends "layout.html" %}
+
+{% block title %}Titration & Measurement - Autotitrator{% endblock %}
+{% block heading %}Titration & Measurement{% endblock %}
+
+{% block content %}
+<div class="dashboard-grid"
+    style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1.5rem;">
+
+    <!-- Single Measurement Card -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Single Measurement</h2>
+        </div>
+        <p class="text-secondary mb-4">Take a one-time conductivity reading (avg of 10s).</p>
+
+        <button id="measureBtn" onclick="measureSingle()" class="btn btn-primary full-width">
+            Measure Conductivity
+        </button>
+
+        <div id="measureProgress" class="progress-container hidden">
+            <div id="measureBar" class="progress-bar"></div>
+        </div>
+
+        <div id="singleResult" class="hidden mt-4"
+            style="background: #f8fafc; padding: 1rem; border-radius: var(--radius-md);">
+            <!-- Results populated by JS -->
+        </div>
+    </div>
+
+    <!-- Titration Card -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">New Titration Experiment</h2>
+        </div>
+
+        <form id="titrationForm" onsubmit="handleTitration(event)">
+            <div class="form-group">
+                <label class="form-label" for="project_select">Project</label>
+                <div style="display: flex; gap: 0.5rem;">
+                    <select id="project_select" name="project_name" class="form-input" style="flex: 1;">
+                        <option value="Default">Default</option>
+                    </select>
+                    <button type="button" id="newAddProjectBtn" class="btn btn-outline" title="Add Project"
+                        style="padding: 0 0.75rem; white-space: nowrap;">Add Project</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="experiment_name">Experiment Name</label>
+                <input type="text" id="experiment_name" name="experiment_name" class="form-input" required
+                    placeholder="e.g. Sample_A_Run_1">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="volume_ml">Volume to Titrate (mL)</label>
+                <input type="number" id="volume_ml" name="volume_ml" class="form-input" min="0.5" step="0.5" required
+                    value="60">
+            </div>
+
+            <button type="submit" id="startBtn" class="btn btn-outline full-width">
+                Start Titration Sequence
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Full Width Progress Section for Titration -->
+<div id="progressSection" class="card hidden">
+    <div class="card-header">
+        <h2 class="card-title">Titration Progress</h2>
+    </div>
+
+    <div class="progress-container">
+        <div id="progressBar" class="progress-bar"></div>
+    </div>
+
+    <div class="text-center text-secondary mb-4" id="statusText">
+        Initializing...
+    </div>
+
+    <button onclick="controlPump('stop')" class="btn btn-danger full-width">Emergency Stop Pump</button>
+</div>
+
+<div id="resultsSection" class="card hidden">
+    <div class="card-header">
+        <h2 class="card-title">Titration Results</h2>
+    </div>
+    <div id="resultsContent"></div>
+    <div class="mt-4">
+        <button onclick="location.reload()" class="btn btn-outline">Start New Experiment</button>
+    </div>
+</div>
+
+<!-- Add Project Modal -->
+<div id="projectModal" class="modal-overlay">
+    <div class="modal">
+        <h3 class="modal-title">New Project</h3>
+        <div class="form-group">
+            <label class="form-label">Project Name</label>
+            <input type="text" id="newProjectName" class="form-input" placeholder="Enter project name...">
+        </div>
+        <div class="modal-actions">
+            <button id="cancelAddProject" class="btn btn-outline">Cancel</button>
+            <button id="confirmAddProject" class="btn btn-primary">Create Project</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Project Management Logic
+    async function loadProjects() {
+        try {
+            const res = await fetch('/projects');
+            const projects = await res.json();
+            const select = document.getElementById('project_select');
+            const currentVal = select.value;
+
+            select.innerHTML = '';
+            projects.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p;
+                opt.textContent = p;
+                select.appendChild(opt);
+            });
+
+            // Restore selection if still exists
+            if (projects.includes(currentVal)) {
+                select.value = currentVal;
+            } else if (projects.includes('Default')) {
+                select.value = 'Default';
+            }
+        } catch (e) {
+            console.error("Failed to load projects", e);
+        }
+    }
+
+    async function addProject() {
+        const name = prompt("Enter new project name:");
+        if (!name) return;
+
+        try {
+            const res = await fetch('/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            const data = await res.json();
+            if (data.error) alert(data.error);
+            else loadProjects();
+        } catch (e) {
+            alert("Error adding project");
+        }
+    }
+
+    async function deleteProject() {
+        const select = document.getElementById('project_select');
+        const name = select.value;
+        if (!name || name === 'Default') {
+            alert("Cannot delete Default project");
+            return;
+        }
+
+        if (!confirm(`Remove project "${name}" from the list? (Data files will NOT be deleted)`)) return;
+
+        try {
+            const res = await fetch('/projects', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            const data = await res.json();
+            if (data.error) alert(data.error);
+            else loadProjects();
+        } catch (e) {
+            alert("Error removing project");
+        }
+    }
+
+    // Load projects on startup
+    loadProjects();
+
+    async function measureSingle() {
+        const btn = document.getElementById('measureBtn');
+        const progress = document.getElementById('measureProgress');
+        const bar = document.getElementById('measureBar');
+        const resultDiv = document.getElementById('singleResult');
+
+        btn.disabled = true;
+        btn.textContent = 'Measuring...';
+        progress.classList.remove('hidden');
+        resultDiv.classList.add('hidden');
+
+        let width = 0;
+        const interval = setInterval(() => {
+            width += 1;
+            if (width > 95) width = 95;
+            bar.style.width = width + '%';
+        }, 120);
+
+        try {
+            const response = await fetch('/measure_conductivity');
+            const data = await response.json();
+
+            clearInterval(interval);
+            bar.style.width = '100%';
+
+            if (data.error) {
+                resultDiv.innerHTML = `<span style="color: var(--danger-color)">Error: ${data.error}</span>`;
+            } else {
+                resultDiv.innerHTML = `
+                <div style="font-size: 0.875rem; color: var(--text-secondary);">Average Conductivity</div>
+                <div style="font-size: 1.5rem; font-weight: 600; color: var(--primary-color);">
+                    ${data.average_conductivity.toFixed(2)} µS/cm
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                    Std Dev: ${data.std_dev_conductivity.toFixed(2)}
+                </div>
+            `;
+            }
+            resultDiv.classList.remove('hidden');
+
+        } catch (error) {
+            clearInterval(interval);
+            resultDiv.innerHTML = `<span style="color: var(--danger-color)">Network Error</span>`;
+            resultDiv.classList.remove('hidden');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Measure Conductivity';
+            setTimeout(() => progress.classList.add('hidden'), 1000);
+        }
+    }
+
+    async function handleTitration(event) {
+        event.preventDefault();
+
+        const form = document.getElementById('titrationForm');
+        const startBtn = document.getElementById('startBtn');
+        const progressSection = document.getElementById('progressSection');
+        const progressBar = document.getElementById('progressBar');
+        const statusText = document.getElementById('statusText');
+        const resultsSection = document.getElementById('resultsSection');
+
+        // UI State: Running
+        startBtn.disabled = true;
+        startBtn.textContent = 'Running...';
+        progressSection.classList.remove('hidden');
+        resultsSection.classList.add('hidden');
+
+        const formData = new FormData(form);
+        const volume = parseFloat(formData.get('volume_ml'));
+        const steps = volume * 2;
+        const estimatedTime = steps * 75;
+
+        let startTime = Date.now();
+        let progressInterval = setInterval(() => {
+            let elapsed = (Date.now() - startTime) / 1000;
+            let pct = (elapsed / estimatedTime) * 100;
+            if (pct > 95) pct = 95;
+            progressBar.style.width = pct + '%';
+            statusText.textContent = `Titrating... ${Math.round(pct)}% (Estimated)`;
+        }, 1000);
+
+        try {
+            const response = await fetch('/start_conductivity_titration', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            clearInterval(progressInterval);
+            progressBar.style.width = '100%';
+            statusText.textContent = 'Completed!';
+
+            if (data.error) {
+                alert('Error: ' + data.error);
+            } else {
+                // Show results
+                document.getElementById('resultsContent').innerHTML = `
+                <div class="success-message" style="color: var(--success-color); margin-bottom: 1rem;">
+                    Sequence Completed Successfully
+                </div>
+                <div style="background: #f8fafc; padding: 1rem; border-radius: var(--radius-md);">
+                    <p><strong>Total Duration:</strong> ${Math.round(data.total_duration)}s</p>
+                    <p><strong>Date:</strong> ${data.date}</p>
+                    <p><strong>Files:</strong></p>
+                    <ul>
+                        <li><a href="/download/${data.filename}" style="color: var(--primary-color);">Download Measurement Data</a></li>
+                    </ul>
+                </div>
+            `;
+                progressSection.classList.add('hidden');
+                resultsSection.classList.remove('hidden');
+            }
+        } catch (error) {
+            clearInterval(progressInterval);
+            alert('Network Error: ' + error.message);
+        } finally {
+            startBtn.disabled = false;
+            startBtn.textContent = 'Start Titration Sequence';
+        }
+    }
+
+    // Modal Logic
+    const modal = document.getElementById('projectModal');
+    const projectInput = document.getElementById('newProjectName');
+    let resolveModal = null;
+
+    function showModal() {
+        modal.classList.add('active');
+        projectInput.focus();
+        return new Promise(resolve => {
+            resolveModal = resolve;
+        });
+    }
+
+    function closeModal(value) {
+        modal.classList.remove('active');
+        projectInput.value = '';
+        if (resolveModal) {
+            resolveModal(value);
+            resolveModal = null;
+        }
+    }
+
+    // Attach event listeners for project buttons
+    document.getElementById('newAddProjectBtn').addEventListener('click', () => addProject());
+    // document.getElementById('deleteProjectBtn').addEventListener('click', deleteProject); // Removed per request
+
+    // Modal Events
+    document.getElementById('confirmAddProject').addEventListener('click', () => {
+        const name = projectInput.value.trim();
+        if (name) closeModal(name);
+    });
+
+    document.getElementById('cancelAddProject').addEventListener('click', () => closeModal(null));
+
+    // Allow Enter key to submit
+    projectInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            const name = projectInput.value.trim();
+            if (name) closeModal(name);
+        }
+    });
+
+    // Update addProject to use modal
+    async function addProject() {
+        const name = await showModal();
+        if (!name) return;
+
+        try {
+            const res = await fetch('/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            const data = await res.json();
+            if (data.error) alert(data.error);
+            else loadProjects();
+        } catch (e) {
+            alert("Error adding project");
+        }
+    }
+</script>
+{% endblock %}
