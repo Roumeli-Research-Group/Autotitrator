@@ -77,6 +77,54 @@ def status_api():
         'system_status': "Operational" if engine.running else "Idle"
     })
 
+@app.route('/api/status')
+def api_status():
+    """API endpoint for status - compatible with frontend polling."""
+    hw = get_hardware()
+    pump = hw.get_pump()
+    
+    # Pump Status
+    pump_running = False
+    if pump:
+        try:
+            pump_running = pump.get_status()
+        except:
+            pass
+            
+    return jsonify({
+        'pump_status': pump_running,
+        'pump': pump_running,  # Alias for frontend compatibility
+        'measurement_status': engine.running,
+        'running': engine.running,  # Alias for frontend compatibility
+        'system_status': "Operational" if engine.running else "Idle"
+    })
+
+@app.route('/start_pump', methods=['POST'])
+def start_pump():
+    """Start the pump manually."""
+    try:
+        hw = get_hardware()
+        pump = hw.get_pump()
+        if pump:
+            pump.start()
+            return jsonify({'message': 'Pump started'})
+        return jsonify({'error': 'Pump not initialized'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/stop_pump', methods=['POST'])
+def stop_pump():
+    """Stop the pump manually."""
+    try:
+        hw = get_hardware()
+        pump = hw.get_pump()
+        if pump:
+            pump.stop()
+            return jsonify({'message': 'Pump stopped'})
+        return jsonify({'error': 'Pump not initialized'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/measurement')
 def measurement():
     return render_template('measurement.html')
