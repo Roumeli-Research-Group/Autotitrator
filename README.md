@@ -16,6 +16,28 @@ A comprehensive automated titration system built for Raspberry Pi, featuring a m
 *   **Project Management**: Organize titrations into projects.
 *   **Smart Fallback**: Automatically switches to "Mock Mode" when running on non-Raspberry Pi hardware for easy development.
 
+## 📸 Screenshots
+
+### Dashboard
+The main dashboard provides quick access to titration, calibration, and manual pump controls.
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+### Titration & Measurement
+Configure and run titration experiments with real-time data monitoring.
+
+![Measurement](docs/screenshots/measurement.png)
+
+### Calibration
+Calibrate pH and Conductivity probes with guided wizards.
+
+![Calibration](docs/screenshots/calibration.png)
+
+### Database
+Manage projects and view past titration experiments.
+
+![Database](docs/screenshots/database.png)
+
 ## 🛠 Hardware Requirements
 
 *   **Raspberry Pi** (Any model with 40-pin GPIO and I2C headers)
