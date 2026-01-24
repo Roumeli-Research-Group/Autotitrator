@@ -33,9 +33,10 @@ class RealAtlasProbe(ProbeInterface):
             raise RuntimeError(f"AtlasI2C not available for {name}")
         self.device = AtlasI2C(address=address, name=name)
         self.name = name
-        # Test connection
+        # Test connection by querying device info (must read response to clear buffer)
         try:
-            self.device.write("Status")
+            response = self.device.query("I")
+            logger.info(f"{name} initialized at address {address}: {response}")
         except Exception as e:
             logger.error(f"Failed to connect to {name} at {address}: {e}")
             raise

@@ -12,7 +12,8 @@ class AtlasI2C:
     """Atlas Scientific I2C device driver."""
 
     # the timeout needed to query readings and calibrations
-    LONG_TIMEOUT = 1.5
+    # EC calibration requires 600ms, using 2.0s for safety margin
+    LONG_TIMEOUT = 2.0
     # timeout for regular commands
     SHORT_TIMEOUT = .3
     # the default bus for I2C on the newer Raspberry Pis, 
