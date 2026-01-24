@@ -90,13 +90,31 @@ def api_status():
             pump_running = pump.get_status()
         except:
             pass
+    
+    # Probe readings for single measurement feature
+    ec_val = 0.0
+    ph_val = 0.0
+    try:
+        ec_probe = hw.get_ec_probe()
+        if ec_probe:
+            ec_val = ec_probe.read() or 0.0
+    except:
+        pass
+    try:
+        ph_probe = hw.get_ph_probe()
+        if ph_probe:
+            ph_val = ph_probe.read() or 0.0
+    except:
+        pass
             
     return jsonify({
         'pump_status': pump_running,
         'pump': pump_running,  # Alias for frontend compatibility
         'measurement_status': engine.running,
         'running': engine.running,  # Alias for frontend compatibility
-        'system_status': "Operational" if engine.running else "Idle"
+        'system_status': "Operational" if engine.running else "Idle",
+        'ec': ec_val,
+        'ph': ph_val
     })
 
 @app.route('/start_pump', methods=['POST'])
