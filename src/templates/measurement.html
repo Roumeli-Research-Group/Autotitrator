@@ -92,6 +92,11 @@
         <div id="liveStatus" class="text-center text-secondary mt-2">
             Ready to start...
         </div>
+        <!-- Stop Button - Always visible when running -->
+        <button id="stopBtn" onclick="stopTitration()" class="btn btn-danger full-width hidden"
+            style="margin-top: 1rem;">
+            ⏹ Stop Titration
+        </button>
     </div>
 </div>
 
@@ -204,8 +209,6 @@
         const form = document.getElementById('titrationForm');
         const startBtn = document.getElementById('startBtn');
         const progressSection = document.getElementById('progressSection');
-        const progressBar = document.getElementById('progressBar');
-        const statusText = document.getElementById('statusText');
         const resultsSection = document.getElementById('resultsSection');
         const liveStatus = document.getElementById('liveStatus');
 
@@ -215,6 +218,7 @@
         resultsSection.classList.add('hidden');
 
         initChart(); // Reset Chart
+        clearSession(); // Clear old session data
 
         const formData = new FormData(form);
         const jsonData = Object.fromEntries(formData.entries());
@@ -232,45 +236,15 @@
             startBtn.textContent = 'Running...';
             liveStatus.textContent = "Acquiring data...";
 
-            // Poll for data
-            let pollInterval = setInterval(async () => {
-                try {
-                    const res = await fetch('/api/titrate/data');
-                    const graphData = await res.json();
-
-                    if (Object.keys(graphData).length > 0) {
-                        const volumes = graphData['Volume (mL)'];
-                        const readings = (graphData['Mode'] === 'pH') ? graphData['pH'] : graphData['Reading'];
-
-                        // Update Chart
-                        chartInstance.data.labels = volumes;
-                        chartInstance.data.datasets[0].data = readings;
-                        chartInstance.data.datasets[0].label = (graphData['Mode'] === 'pH') ? 'pH' : 'Conductivity (µS/cm)';
-                        chartInstance.update();
-
-                        liveStatus.textContent = `Last: ${readings[readings.length - 1]?.toFixed(2) || '--'}`;
-                    }
-
-                    // Check status to stop polling
-                    const statusRes = await fetch('/api/status');
-                    const status = await statusRes.json();
-                    if (!status.running) {
-                        clearInterval(pollInterval);
-                        onTitrationComplete(jsonData.experiment_name);
-                    }
-
-                    statusText.textContent = `Running... Pump: ${status.pump ? 'ON' : 'OFF'}`;
-
-                } catch (e) {
-                    console.error(e);
-                }
-            }, 1000);
+            // Start polling (uses shared function with session persistence)
+            startPolling();
 
         } catch (error) {
             alert('Error: ' + error.message);
             startBtn.disabled = false;
             startBtn.textContent = 'Start Titration Sequence';
             progressSection.classList.add('hidden');
+            hideStopButton();
         }
     }
 
@@ -282,6 +256,10 @@
         document.getElementById('statusText').textContent = 'Completed!';
         document.getElementById('progressSection').classList.add('hidden');
         document.getElementById('resultsSection').classList.remove('hidden');
+
+        // Clear session and hide stop button
+        clearSession();
+        hideStopButton();
 
         document.getElementById('resultsContent').innerHTML = `
                 <div class="success-message" style="color: var(--success-color); margin-bottom: 1rem;">
@@ -296,8 +274,126 @@
 
 
 
+    // === Session Persistence ===
+    const SESSION_KEY = 'titration_session';
+
+    function saveSession(graphData) {
+        localStorage.setItem(SESSION_KEY, JSON.stringify({
+            data: graphData,
+            timestamp: Date.now()
+        }));
+    }
+
+    function loadSession() {
+        const saved = localStorage.getItem(SESSION_KEY);
+        if (saved) {
+            try {
+                return JSON.parse(saved);
+            } catch (e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    function clearSession() {
+        localStorage.removeItem(SESSION_KEY);
+    }
+
+    function showStopButton() {
+        document.getElementById('stopBtn').classList.remove('hidden');
+    }
+
+    function hideStopButton() {
+        document.getElementById('stopBtn').classList.add('hidden');
+    }
+
+    // Check if titration is running on page load and restore session
+    async function checkActiveSession() {
+        try {
+            const statusRes = await fetch('/api/status');
+            const status = await statusRes.json();
+
+            if (status.running) {
+                // Titration is running - show stop button and start polling
+                showStopButton();
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('startBtn').textContent = 'Running...';
+                document.getElementById('progressSection').classList.remove('hidden');
+                document.getElementById('liveStatus').textContent = 'Reconnecting to session...';
+
+                // Restore chart from session storage if available
+                const session = loadSession();
+                if (session && session.data) {
+                    updateChartFromData(session.data);
+                }
+
+                // Start polling
+                startPolling();
+            } else {
+                // Not running - clear any stale session
+                hideStopButton();
+                clearSession();
+            }
+        } catch (e) {
+            console.error('Failed to check session:', e);
+        }
+    }
+
+    function updateChartFromData(graphData) {
+        if (!chartInstance) initChart();
+
+        const volumes = graphData['Volume (mL)'] || [];
+        const readings = (graphData['Mode'] === 'pH') ? graphData['pH'] : graphData['Reading'];
+
+        if (volumes.length > 0 && readings) {
+            chartInstance.data.labels = volumes;
+            chartInstance.data.datasets[0].data = readings;
+            chartInstance.data.datasets[0].label = (graphData['Mode'] === 'pH') ? 'pH' : 'Conductivity (µS/cm)';
+            chartInstance.update();
+
+            const lastReading = readings[readings.length - 1];
+            document.getElementById('liveStatus').textContent = `Last: ${lastReading?.toFixed(2) || '--'}`;
+        }
+    }
+
+    let activePollInterval = null;
+
+    function startPolling() {
+        if (activePollInterval) return; // Already polling
+
+        showStopButton();
+
+        activePollInterval = setInterval(async () => {
+            try {
+                const res = await fetch('/api/titrate/data');
+                const graphData = await res.json();
+
+                if (Object.keys(graphData).length > 0) {
+                    updateChartFromData(graphData);
+                    saveSession(graphData); // Persist to localStorage
+                }
+
+                // Check if still running
+                const statusRes = await fetch('/api/status');
+                const status = await statusRes.json();
+
+                document.getElementById('statusText').textContent = `Running... Pump: ${status.pump ? 'ON' : 'OFF'}`;
+
+                if (!status.running) {
+                    clearInterval(activePollInterval);
+                    activePollInterval = null;
+                    onTitrationComplete(document.getElementById('experiment_name').value || 'Experiment');
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }, 1000);
+    }
 
     // Init
     loadProjects();
+    initChart();
+    checkActiveSession();
 </script>
 {% endblock %}

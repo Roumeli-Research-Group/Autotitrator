@@ -146,18 +146,35 @@ class AtlasI2C:
             return self.short_timeout
         return None
 
-    def query(self, command):
+    def query(self, command, max_retries=3):
         """
         Write a command to the board, wait the correct timeout,
-        and read the response.
+        and read the response. Retries on 254 (still processing) responses.
         """
         self.write(command)
         current_timeout = self.get_command_timeout(command=command)
         if not current_timeout:
             return "sleep mode"
-        else:
-            time.sleep(current_timeout)
-            return self.read()
+        
+        # Initial wait
+        time.sleep(current_timeout)
+        
+        # Read with retry logic for 254 (processing) responses
+        for attempt in range(max_retries):
+            result = self.read()
+            
+            # Check if response indicates still processing (254)
+            if "Error" in result and ": 254" in result:
+                # Wait additional time and retry
+                retry_delay = 0.3 * (attempt + 1)  # Exponential backoff: 0.3s, 0.6s, 0.9s
+                time.sleep(retry_delay)
+                continue
+            
+            # Success or other error - return result
+            return result
+        
+        # All retries exhausted
+        return result
 
     def close(self):
         """Close file handles."""

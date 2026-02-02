@@ -3,16 +3,55 @@ from flask import Flask, render_template, request, jsonify, send_from_directory,
 import os
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import datetime
 import threading
 import time
 import atexit
+from collections import deque
 from src.hardware import get_hardware
 from src.titration import TitrationEngine
 from src.utils import get_setting, update_setting, DEFAULT_SETTINGS
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# In-memory log buffer for API access (last 500 entries)
+log_buffer = deque(maxlen=500)
+
+class BufferHandler(logging.Handler):
+    """Custom handler to store logs in memory buffer for API access."""
+    def emit(self, record):
+        log_entry = {
+            'timestamp': datetime.datetime.fromtimestamp(record.created).strftime('%Y-%m-%d %H:%M:%S'),
+            'level': record.levelname,
+            'name': record.name,
+            'message': self.format(record)
+        }
+        log_buffer.append(log_entry)
+
+# Configure logging with file and buffer handlers
+log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, 'autotitrator.log')
+
+# Create formatters and handlers
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# File handler (rotating, 5 MB max, keep 3 backups)
+file_handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=3)
+file_handler.setFormatter(formatter)
+file_handler.setLevel(logging.INFO)
+
+# Console handler
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+console_handler.setLevel(logging.INFO)
+
+# Buffer handler for API
+buffer_handler = BufferHandler()
+buffer_handler.setFormatter(logging.Formatter('%(message)s'))
+buffer_handler.setLevel(logging.INFO)
+
+# Configure root logger
+logging.basicConfig(level=logging.INFO, handlers=[file_handler, console_handler, buffer_handler])
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -448,6 +487,26 @@ def download_file(filename):
         abort(400, description='Invalid path')
     
     return send_from_directory('static/titrations', filename)
+
+@app.route('/logs')
+def logs_page():
+    """Render the logs viewer page."""
+    return render_template('logs.html')
+
+@app.route('/api/logs', methods=['GET'])
+def get_logs_api():
+    """Get recent log entries from memory buffer."""
+    level_filter = request.args.get('level', None)
+    limit = min(int(request.args.get('limit', 100)), 500)
+    
+    logs = list(log_buffer)
+    
+    # Filter by level if specified
+    if level_filter and level_filter.upper() in ['INFO', 'WARNING', 'ERROR', 'DEBUG']:
+        logs = [l for l in logs if l['level'] == level_filter.upper()]
+    
+    # Return most recent entries (reversed so newest first)
+    return jsonify(logs[-limit:][::-1])
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

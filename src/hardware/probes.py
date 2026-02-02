@@ -2,6 +2,7 @@
 from abc import ABC, abstractmethod
 import logging
 import random
+import time
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -69,14 +70,28 @@ class RealAtlasProbe(ProbeInterface):
              logger.warning(f"Could not parse float from: {response}")
              return 0.0
 
-    def read(self):
-        """Read current value from probe. Returns None on error."""
-        try:
-            response = self.device.query("R")
-            return self._parse_response(response)
-        except Exception as e:
-            logger.error(f"Error reading {self.name}: {e}")
-            return None  # Return None to indicate error (not 0.0)
+    def read(self, max_retries=2):
+        """Read current value from probe. Returns None on error after retries."""
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                response = self.device.query("R")
+                value = self._parse_response(response)
+                # Valid reading (not 0.0 from error parsing)
+                if value is not None and value != 0.0:
+                    return value
+                # Got 0.0 - might be parse error, retry
+                if attempt < max_retries - 1:
+                    time.sleep(0.5)
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Error reading {self.name} (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(0.5)
+        
+        if last_error:
+            logger.error(f"Failed to read {self.name} after {max_retries} attempts: {last_error}")
+        return None  # Return None to indicate error
 
     def calibrate(self, cal_type, value=None):
         cmd = ""
