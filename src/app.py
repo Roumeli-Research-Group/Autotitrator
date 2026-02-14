@@ -130,21 +130,25 @@ def api_status():
         except:
             pass
     
-    # Probe readings for single measurement feature
+    # Probe readings: use cached values during titration to avoid I2C bus collisions
     ec_val = 0.0
     ph_val = 0.0
-    try:
-        ec_probe = hw.get_ec_probe()
-        if ec_probe:
-            ec_val = ec_probe.read() or 0.0
-    except:
-        pass
-    try:
-        ph_probe = hw.get_ph_probe()
-        if ph_probe:
-            ph_val = ph_probe.read() or 0.0
-    except:
-        pass
+    if engine.running:
+        ec_val = engine._last_ec
+        ph_val = engine._last_ph
+    else:
+        try:
+            ec_probe = hw.get_ec_probe()
+            if ec_probe:
+                ec_val = ec_probe.read() or 0.0
+        except:
+            pass
+        try:
+            ph_probe = hw.get_ph_probe()
+            if ph_probe:
+                ph_val = ph_probe.read() or 0.0
+        except:
+            pass
             
     return jsonify({
         'pump_status': pump_running,

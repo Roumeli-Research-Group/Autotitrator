@@ -20,6 +20,8 @@ class TitrationEngine:
         self.hw = get_hardware()
         self._data_lock = threading.Lock()  # Thread safety for shared state
         self._current_data = {}  # Shared state for graph
+        self._last_ec = 0.0  # Cached probe readings for status endpoint
+        self._last_ph = 0.0
 
     @property
     def current_data(self):
@@ -216,8 +218,13 @@ class TitrationEngine:
             value = probe.read()
             if value is not None:  # Only include valid readings
                 readings.append(value)
+                # Cache latest reading for status endpoint
+                if probe is self.hw.get_ec_probe():
+                    self._last_ec = value
+                elif probe is self.hw.get_ph_probe():
+                    self._last_ph = value
             time.sleep(delay)
-        
+
         if not readings:
             logger.warning("No valid readings collected")
             return None, None
