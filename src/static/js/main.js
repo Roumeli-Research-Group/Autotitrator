@@ -1,7 +1,8 @@
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Start global status polling
-    setInterval(updateGlobalStatus, 2000);
+    // Start global status polling. Probe values are cached server-side
+    // (PROBE_CACHE_TTL), so this does not hammer the I2C bus.
+    setInterval(updateGlobalStatus, 4000);
     updateGlobalStatus();
 
     // Setup mobile menu config if needed (not implemented in CSS yet but good practice)
@@ -9,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function updateGlobalStatus() {
     try {
-        const response = await fetch('/status');
+        const response = await fetch('/api/status');
         const data = await response.json();
 
         const pumpBadge = document.getElementById('status-pump');
@@ -22,9 +23,22 @@ async function updateGlobalStatus() {
         if (measureBadge) {
             updateBadge(measureBadge, data.measurement_status, 'Measuring', 'Idle');
         }
+
+        setBadgeValue('status-ph', 'pH', data.ph, 2);
+        setBadgeValue('status-ec', 'EC', data.ec, 0, ' µS/cm');
+        setBadgeValue('status-temp', 'Temp', data.temp, 1, ' °C');
     } catch (error) {
         console.error('Failed to fetch status:', error);
     }
+}
+
+function setBadgeValue(id, label, value, decimals, suffix = '') {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const text = (value === null || value === undefined)
+        ? `${label}: --`
+        : `${label}: ${Number(value).toFixed(decimals)}${suffix}`;
+    el.querySelector('span').textContent = text;
 }
 
 function updateBadge(element, isActive, activeText, inactiveText) {

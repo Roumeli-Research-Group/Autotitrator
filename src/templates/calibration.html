@@ -10,34 +10,124 @@
     <!-- Conductivity Calibration -->
     <div class="card">
         <div class="card-header">
-            <h2 class="card-title">Conductivity Probe Calibration</h2>
+            <h2 class="card-title">Conductivity Probe</h2>
         </div>
 
         <div class="form-group">
             <label class="form-label">Current Reading</label>
             <div style="display: flex; gap: 1rem; align-items: center;">
-                <div id="live-conductivity" style="font-size: 1.5rem; font-weight: 600;">--</div>
-                <span class="text-secondary">µS/cm</span>
+                <div id="live-ec" style="font-size: 1.5rem; font-weight: 600;">--</div>
+                <span class="text-secondary">&micro;S/cm</span>
+                <span id="stable-ec" class="text-secondary" style="font-size: 0.85rem;">stabilizing&hellip;</span>
             </div>
         </div>
 
-        <div style="display: grid; gap: 1rem; margin-top: 2rem;">
-            <button onclick="calibrate('dry')" class="btn btn-outline full-width">
+        <div id="health-ec" class="text-secondary" style="font-size: 0.85rem; margin-bottom: 1rem;">
+            Loading probe info&hellip;</div>
+
+        <div style="display: grid; gap: 1rem;">
+            <button onclick="calibrateEc('dry')" class="btn btn-outline full-width cal-btn-ec">
                 Calibrate Dry (Zero)
             </button>
 
-            <form onsubmit="calibrateWithVal(event, 'low')" style="display: flex; gap: 0.5rem;">
+            <form onsubmit="calibrateEcVal(event, 'low')" style="display: flex; gap: 0.5rem;">
                 <input type="number" id="cal-low" class="form-input" placeholder="Low Value (e.g. 12880)" required>
-                <button type="submit" class="btn btn-primary">Calibrate Low</button>
+                <button type="submit" class="btn btn-primary cal-btn-ec">Calibrate Low</button>
             </form>
 
-            <form onsubmit="calibrateWithVal(event, 'high')" style="display: flex; gap: 0.5rem;">
+            <form onsubmit="calibrateEcVal(event, 'high')" style="display: flex; gap: 0.5rem;">
                 <input type="number" id="cal-high" class="form-input" placeholder="High Value (e.g. 80000)" required>
-                <button type="submit" class="btn btn-primary">Calibrate High</button>
+                <button type="submit" class="btn btn-primary cal-btn-ec">Calibrate High</button>
             </form>
         </div>
 
         <div id="cal-status" class="mt-4 text-secondary"></div>
+    </div>
+
+    <!-- pH Probe Calibration -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">pH Probe</h2>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Current Reading</label>
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <div id="live-ph" style="font-size: 1.5rem; font-weight: 600;">--</div>
+                <span class="text-secondary">pH</span>
+                <span id="stable-ph" class="text-secondary" style="font-size: 0.85rem;">stabilizing&hellip;</span>
+            </div>
+        </div>
+
+        <div id="health-ph" class="text-secondary" style="font-size: 0.85rem; margin-bottom: 0.5rem;">
+            Loading probe info&hellip;</div>
+
+        <p class="text-secondary" style="font-size: 0.875rem;">
+            3-point calibration (Atlas EZO). <strong>Always calibrate Mid (pH 7) first</strong> &mdash;
+            the firmware clears previous calibration when Mid is set. Rinse the probe between buffers
+            and wait for the reading to stabilize before each point.
+        </p>
+
+        <div style="display: grid; gap: 1rem; margin-top: 1rem;">
+            <form onsubmit="calibratePh(event, 'mid')" style="display: flex; gap: 0.5rem;">
+                <input type="number" step="0.01" id="ph-cal-mid" class="form-input" value="7.00" required>
+                <button type="submit" class="btn btn-primary cal-btn-ph" style="white-space: nowrap;">1. Cal Mid</button>
+            </form>
+
+            <form onsubmit="calibratePh(event, 'low')" style="display: flex; gap: 0.5rem;">
+                <input type="number" step="0.01" id="ph-cal-low" class="form-input" value="4.00" required>
+                <button type="submit" class="btn btn-primary cal-btn-ph" style="white-space: nowrap;">2. Cal Low</button>
+            </form>
+
+            <form onsubmit="calibratePh(event, 'high')" style="display: flex; gap: 0.5rem;">
+                <input type="number" step="0.01" id="ph-cal-high" class="form-input" value="10.00" required>
+                <button type="submit" class="btn btn-primary cal-btn-ph" style="white-space: nowrap;">3. Cal High</button>
+            </form>
+
+            <button onclick="clearPhCalibration()" class="btn btn-outline full-width">
+                Clear pH Calibration
+            </button>
+        </div>
+
+        <div id="ph-cal-status" class="mt-4 text-secondary"></div>
+    </div>
+
+    <!-- RTD Temperature Calibration -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Temperature Probe (RTD)</h2>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Current Reading</label>
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <div id="live-temp" style="font-size: 1.5rem; font-weight: 600;">--</div>
+                <span class="text-secondary">&deg;C</span>
+                <span id="stable-temp" class="text-secondary" style="font-size: 0.85rem;">stabilizing&hellip;</span>
+            </div>
+        </div>
+
+        <div id="health-temp" class="text-secondary" style="font-size: 0.85rem; margin-bottom: 0.5rem;">
+            Loading probe info&hellip;</div>
+
+        <p class="text-secondary" style="font-size: 0.875rem;">
+            Single-point calibration: place the RTD in a reference of known temperature
+            (ice bath 0.00 &deg;C, boiling water ~100 &deg;C, or a NIST thermometer reading),
+            wait for stability, enter that temperature and calibrate.
+        </p>
+
+        <div style="display: grid; gap: 1rem; margin-top: 1rem;">
+            <form onsubmit="calibrateRtd(event)" style="display: flex; gap: 0.5rem;">
+                <input type="number" step="0.01" id="rtd-cal-value" class="form-input"
+                    placeholder="Known temp (e.g. 0.00)" required>
+                <button type="submit" class="btn btn-primary cal-btn-temp" style="white-space: nowrap;">Calibrate</button>
+            </form>
+            <button onclick="clearRtdCalibration()" class="btn btn-outline full-width">
+                Clear RTD Calibration
+            </button>
+        </div>
+
+        <div id="rtd-cal-status" class="mt-4 text-secondary"></div>
     </div>
 
     <!-- Pump Calibration (Link) -->
@@ -45,7 +135,8 @@
         <div class="card-header">
             <h2 class="card-title">Pump Calibration</h2>
         </div>
-        <p class="text-secondary mb-4">Use the Pump Calibration wizard to calculate and update the flow rate.</p>
+        <p class="text-secondary mb-4">Gravimetric two-constant calibration (flow rate Q and
+            dead time &tau;) via the Pump Calibration wizard.</p>
         <a href="/pump_calibration" class="btn btn-outline full-width">
             Open Pump Calibration Wizard
         </a>
@@ -53,38 +144,168 @@
 </div>
 
 <script>
-    // Poll for live conductivity reading
-    setInterval(async () => {
-        try {
-            const res = await fetch('/get_conductivity_data');
-            const data = await res.json();
-            if (data.conductivity !== undefined) {
-                document.getElementById('live-conductivity').textContent = data.conductivity;
-            }
-        } catch (e) {
-            console.error(e);
-        }
-    }, 1000);
+    // ---- Live readings with client-side stability gating -----------------
+    // Keep the last WINDOW polled values per probe; a probe is "stable" when
+    // the spread (std) is below its threshold. Calibration buttons stay
+    // disabled until the reading is stable (override available).
+    const WINDOW = 5;
+    const history = { ph: [], ec: [], temp: [] };
+    let thresholds = { ph: 0.02, ecPct: 1.0, temp: 0.1 };  // overwritten from /api/settings
+    let calibrating = false;
+    let overrideStability = false;
 
-    async function calibrate(type) {
-        if (!confirm(`Perform ${type} calibration? Ensure probe is ready.`)) return;
-        runCal(type, null);
+    fetch('/api/settings').then(r => r.json()).then(s => {
+        thresholds.ph = s.PH_STABILITY_THRESHOLD ?? 0.02;
+        thresholds.ecPct = s.EC_STABILITY_THRESHOLD_PCT ?? 1.0;
+        thresholds.temp = s.TEMP_STABILITY_THRESHOLD ?? 0.1;
+    }).catch(() => {});
+
+    function std(arr) {
+        const m = arr.reduce((a, b) => a + b, 0) / arr.length;
+        return Math.sqrt(arr.reduce((a, b) => a + (b - m) ** 2, 0) / arr.length);
     }
 
-    async function calibrateWithVal(event, type) {
+    function isStable(probe) {
+        const h = history[probe];
+        if (h.length < WINDOW) return false;
+        const s = std(h);
+        if (probe === 'ph') return s < thresholds.ph;
+        if (probe === 'temp') return s < thresholds.temp;
+        const mean = h.reduce((a, b) => a + b, 0) / h.length;
+        return s < Math.max(Math.abs(mean) * thresholds.ecPct / 100, 1.0);
+    }
+
+    function updateStabilityUI(probe) {
+        const stable = isStable(probe) || overrideStability;
+        const el = document.getElementById('stable-' + probe);
+        if (el) {
+            el.textContent = stable ? '✓ stable' : 'stabilizing…';
+            el.style.color = stable ? 'var(--success-color, #1e8449)' : '';
+        }
+        document.querySelectorAll('.cal-btn-' + probe).forEach(btn => {
+            btn.disabled = !stable;
+            btn.title = stable ? '' : 'Waiting for the reading to stabilize';
+        });
+    }
+
+    async function pollProbe(probe, elId, decimals) {
+        if (calibrating) return;
+        try {
+            const res = await fetch('/api/probe_read/' + probe);
+            const data = await res.json();
+            if (data.value !== undefined && data.value !== null) {
+                document.getElementById(elId).textContent = Number(data.value).toFixed(decimals);
+                history[probe].push(Number(data.value));
+                if (history[probe].length > WINDOW) history[probe].shift();
+            }
+        } catch (e) { console.error(e); }
+        updateStabilityUI(probe);
+    }
+
+    setInterval(() => pollProbe('ec', 'live-ec', 1), 3000);
+    setInterval(() => pollProbe('ph', 'live-ph', 2), 3000);
+    setInterval(() => pollProbe('temp', 'live-temp', 2), 3000);
+
+    // Double-click the stability chip to override the gate (advanced use)
+    document.querySelectorAll('[id^="stable-"]').forEach(el => {
+        el.style.cursor = 'pointer';
+        el.title = 'Double-click to override the stability gate';
+        el.addEventListener('dblclick', () => {
+            overrideStability = !overrideStability;
+            ['ph', 'ec', 'temp'].forEach(updateStabilityUI);
+        });
+    });
+
+    // ---- Probe health ----------------------------------------------------
+    async function loadHealth(probe) {
+        const el = document.getElementById('health-' + probe);
+        try {
+            const res = await fetch('/api/probe_health/' + probe);
+            const h = await res.json();
+            if (h.error) { el.textContent = h.error; return; }
+
+            const bits = [];
+            if (h.cal_points !== undefined) {
+                const label = { 0: 'NOT calibrated', 1: '1-point', 2: '2-point', 3: '3-point' }[h.cal_points]
+                    ?? h.cal_points + '-point';
+                bits.push(`Calibration: <strong>${label}</strong>`);
+            }
+            if (h.cal_date) bits.push(`last ${h.cal_date}`);
+            if (h.slope_acid_pct !== undefined) {
+                const worst = Math.min(h.slope_acid_pct, h.slope_base_pct);
+                const color = worst >= 95 ? 'var(--success-color,#1e8449)'
+                    : worst >= 90 ? '#e67e22' : 'var(--danger-color,#c0392b)';
+                bits.push(`Electrode slope: <strong style="color:${color}">`
+                    + `${h.slope_acid_pct}% / ${h.slope_base_pct}%</strong>`
+                    + (h.offset_mv !== undefined ? ` (offset ${h.offset_mv} mV)` : '')
+                    + (worst < 90 ? ' &mdash; clean or replace the electrode' : ''));
+            }
+            if (h.k_value !== undefined) bits.push(`K = ${h.k_value}`);
+            el.innerHTML = bits.length ? bits.join(' &middot; ') : 'No probe info available';
+        } catch (e) {
+            el.textContent = 'Probe info unavailable';
+        }
+    }
+    ['ph', 'ec', 'temp'].forEach(loadHealth);
+
+    // ---- Calibration actions ---------------------------------------------
+    async function calibrateEc(type) {
+        if (!confirm(`Perform ${type} calibration? Ensure probe is ready.`)) return;
+        await sendCalibration('/start_conductivity_calibration', type, null, 'cal-status', 'ec');
+    }
+
+    async function calibrateEcVal(event, type) {
         event.preventDefault();
         const val = document.getElementById('cal-' + type).value;
         if (!confirm(`Perform ${type} calibration with value ${val}?`)) return;
-        runCal(type, val);
+        await sendCalibration('/start_conductivity_calibration', type, val, 'cal-status', 'ec');
     }
 
-    async function runCal(type, value) {
-        const statusEl = document.getElementById('cal-status');
+    let phMidDone = false;
+
+    async function calibratePh(event, type) {
+        event.preventDefault();
+        const val = parseFloat(document.getElementById('ph-cal-' + type).value);
+
+        if (type !== 'mid' && !phMidDone) {
+            if (!confirm('Mid (pH 7) has not been calibrated in this session.\n' +
+                'Atlas firmware requires Mid FIRST (it clears previous calibration).\n' +
+                'Continue anyway?')) return;
+        } else {
+            if (!confirm(`Calibrate ${type} point at pH ${val}?\nEnsure probe is rinsed and stable in buffer.`)) return;
+        }
+
+        const ok = await sendCalibration('/start_ph_calibration', type, val, 'ph-cal-status', 'ph');
+        if (ok && type === 'mid') phMidDone = true;
+    }
+
+    async function clearPhCalibration() {
+        if (!confirm('Clear ALL pH calibration data from the probe?')) return;
+        const ok = await sendCalibration('/start_ph_calibration', 'clear', null, 'ph-cal-status', 'ph');
+        if (ok) phMidDone = false;
+    }
+
+    async function calibrateRtd(event) {
+        event.preventDefault();
+        const val = parseFloat(document.getElementById('rtd-cal-value').value);
+        if (!confirm(`Calibrate RTD at ${val} °C?\nEnsure the probe has fully equilibrated in the reference.`)) return;
+        await sendCalibration('/start_rtd_calibration', 'point', val, 'rtd-cal-status', 'temp');
+    }
+
+    async function clearRtdCalibration() {
+        if (!confirm('Clear RTD calibration?')) return;
+        await sendCalibration('/start_rtd_calibration', 'clear', null, 'rtd-cal-status', 'temp');
+    }
+
+    // Shared calibration POST helper; reloads health after success
+    async function sendCalibration(endpoint, type, value, statusId, probe) {
+        const statusEl = document.getElementById(statusId);
         statusEl.textContent = 'Calibrating...';
         statusEl.className = 'mt-4 text-primary';
+        calibrating = true;
 
         try {
-            const res = await fetch('/start_conductivity_calibration', {
+            const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type, value })
@@ -94,13 +315,20 @@
             if (data.error) {
                 statusEl.textContent = 'Error: ' + data.error;
                 statusEl.className = 'mt-4 text-danger';
+                return false;
             } else {
                 statusEl.textContent = 'Success: ' + data.message;
                 statusEl.className = 'mt-4 text-success';
+                history[probe] = [];  // re-establish stability after cal
+                loadHealth(probe);
+                return true;
             }
         } catch (e) {
             statusEl.textContent = 'Network Error';
             statusEl.className = 'mt-4 text-danger';
+            return false;
+        } finally {
+            calibrating = false;
         }
     }
 </script>

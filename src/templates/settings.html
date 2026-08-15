@@ -19,9 +19,11 @@
         <h3 style="font-size: 1.1rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; margin-bottom: 1rem;">Pump
             Configuration</h3>
         <div class="form-group">
-            <label class="form-label" for="FLOW_RATE">Flow Rate (mL/s)</label>
-            <input type="number" step="0.0001" id="FLOW_RATE" name="FLOW_RATE" class="form-input" required>
-            <small class="text-secondary">Note: Use Pump Calibration wizard for precise measurement.</small>
+            <label class="form-label" for="DEFAULT_FLOW_RATE">Flow Rate Q (mL/s)</label>
+            <input type="number" step="0.0001" id="DEFAULT_FLOW_RATE" name="DEFAULT_FLOW_RATE" class="form-input"
+                required>
+            <small class="text-secondary">Note: Use the Pump Calibration wizard for precise measurement (it also fits
+                the dead time &tau;).</small>
         </div>
         <div class="form-group">
             <label class="form-label" for="VOLUME_PER_STEP">Volume per Step (mL)</label>
@@ -51,6 +53,61 @@
         <div class="form-group">
             <label class="form-label" for="CONDUCTIVITY_READ_DELAY">Delay Between Samples (seconds)</label>
             <input type="number" step="0.1" id="CONDUCTIVITY_READ_DELAY" name="CONDUCTIVITY_READ_DELAY"
+                class="form-input" required>
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="PH_READINGS">pH Readings per Point</label>
+            <input type="number" step="1" id="PH_READINGS" name="PH_READINGS" class="form-input" required>
+        </div>
+
+        <!-- Endpoint titration -->
+        <h3
+            style="font-size: 1.1rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; margin-bottom: 1rem; margin-top: 2rem;">
+            Endpoint Titration</h3>
+        <div class="form-group">
+            <label class="form-label" for="ENDPOINT_MAX_VOLUME_ML">Max Volume Safety Cap (mL)</label>
+            <input type="number" step="5" id="ENDPOINT_MAX_VOLUME_ML" name="ENDPOINT_MAX_VOLUME_ML" class="form-input"
+                required>
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="ENDPOINT_FINE_WINDOW_PH">Fine-Step Window (pH from target)</label>
+            <input type="number" step="0.1" id="ENDPOINT_FINE_WINDOW_PH" name="ENDPOINT_FINE_WINDOW_PH"
+                class="form-input" required>
+            <small class="text-secondary">Within this distance of the target, doses shrink to step/divisor.</small>
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="ENDPOINT_FINE_DIVISOR">Fine-Step Divisor</label>
+            <input type="number" step="1" id="ENDPOINT_FINE_DIVISOR" name="ENDPOINT_FINE_DIVISOR" class="form-input"
+                required>
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="ENDPOINT_DIVERGENCE_STEPS">Divergence Abort (consecutive wrong-way
+                steps)</label>
+            <input type="number" step="1" id="ENDPOINT_DIVERGENCE_STEPS" name="ENDPOINT_DIVERGENCE_STEPS"
+                class="form-input" required>
+        </div>
+
+        <!-- Stability detection -->
+        <h3
+            style="font-size: 1.1rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; margin-bottom: 1rem; margin-top: 2rem;">
+            Stability Detection</h3>
+        <div class="form-group">
+            <label class="form-label" for="STABILITY_WINDOW">Stability Window (readings)</label>
+            <input type="number" step="1" id="STABILITY_WINDOW" name="STABILITY_WINDOW" class="form-input" required>
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="PH_STABILITY_THRESHOLD">pH Stability Threshold (pH units)</label>
+            <input type="number" step="0.005" id="PH_STABILITY_THRESHOLD" name="PH_STABILITY_THRESHOLD"
+                class="form-input" required>
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="EC_STABILITY_THRESHOLD_PCT">EC Stability Threshold (%)</label>
+            <input type="number" step="0.1" id="EC_STABILITY_THRESHOLD_PCT" name="EC_STABILITY_THRESHOLD_PCT"
+                class="form-input" required>
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="TEMP_STABILITY_THRESHOLD">Temperature Stability Threshold (&deg;C)</label>
+            <input type="number" step="0.05" id="TEMP_STABILITY_THRESHOLD" name="TEMP_STABILITY_THRESHOLD"
                 class="form-input" required>
         </div>
 

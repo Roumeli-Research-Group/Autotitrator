@@ -3,7 +3,7 @@ import os
 import logging
 import atexit
 from .pump import RealPump, MockPump
-from .probes import PHProbe, ConductivityProbe, MockProbe
+from .probes import PHProbe, ConductivityProbe, TemperatureProbe, MockProbe
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -16,6 +16,7 @@ class HardwareManager:
         self.pump = None
         self.ph_probe = None
         self.ec_probe = None
+        self.temp_probe = None
 
     def init_hardware(self):
         self.env = os.environ.get('TITRATOR_ENV', 'DEV')
@@ -37,20 +38,27 @@ class HardwareManager:
         # Initialize Probes
         self.ph_probe = None
         self.ec_probe = None
+        self.temp_probe = None
 
         if self.env == 'PROD':
             try:
                 self.ph_probe = PHProbe(address=0x63)
             except Exception as e:
                 logger.error(f"Failed to init PHProbe: {e}")
-                
+
             try:
                 self.ec_probe = ConductivityProbe(address=0x64)
             except Exception as e:
                 logger.error(f"Failed to init ConductivityProbe: {e}")
+
+            try:
+                self.temp_probe = TemperatureProbe(address=0x66)
+            except Exception as e:
+                logger.error(f"Failed to init TemperatureProbe: {e}")
         else:
             self.ph_probe = MockProbe("PH")
             self.ec_probe = MockProbe("EC")
+            self.temp_probe = MockProbe("TEMP")
 
     def get_pump(self):
         return self.pump
@@ -63,12 +71,18 @@ class HardwareManager:
 
     def get_ec_probe(self):
         return self.ec_probe
-        
+
+    def get_temp_probe(self):
+        return self.temp_probe
+
     def get_probe(self, probe_type):
-        if probe_type.lower() == 'ph':
+        ptype = probe_type.lower()
+        if ptype == 'ph':
             return self.ph_probe
-        elif probe_type.lower() == 'ec' or probe_type.lower() == 'conductivity':
+        elif ptype in ('ec', 'conductivity'):
             return self.ec_probe
+        elif ptype in ('temp', 'rtd', 'temperature'):
+            return self.temp_probe
         return None
 
     def cleanup(self):

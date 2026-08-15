@@ -6,3 +6,10 @@ __pycache__/
 .agent/
 # Ignore data csvs but keep the folder
 src/static/titrations/*.csv
+src/static/titrations/**/*.csv
+
+# Runtime logs
+src/logs/
+
+# Claude Code local config
+.claude/

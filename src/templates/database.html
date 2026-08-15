@@ -3,6 +3,10 @@
 {% block title %}Database - Autotitrator{% endblock %}
 {% block heading %}Titration Database{% endblock %}
 
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+
 {% block content %}
 <div class="card">
     <div class="card-header" style="flex-wrap: wrap; gap: 1rem;">
@@ -53,9 +57,16 @@
 
     <!-- File List View (Hidden initially) -->
     <div id="filesView" class="table-container hidden">
+        <div style="display: flex; gap: 0.75rem; padding: 0 1rem 1rem; flex-wrap: wrap;">
+            <button onclick="compareSelected()" class="btn btn-primary" id="compareBtn" disabled>
+                Plot Selected (0)
+            </button>
+            <a id="exportAllLink" href="#" class="btn btn-outline">Export All (zip)</a>
+        </div>
         <table class="table" id="filesTable">
             <thead>
                 <tr>
+                    <th style="width: 32px;"></th>
                     <th>Experiment Name</th>
                     <th>Date</th>
                     <th>Time</th>
@@ -68,6 +79,14 @@
         </table>
         <div id="noFilesMsg" class="text-center text-secondary mt-4 hidden">
             No files in this project.
+        </div>
+
+        <!-- Plot panel -->
+        <div id="plotPanel" class="hidden" style="padding: 1rem;">
+            <div style="position: relative; height: 380px;">
+                <canvas id="dbChart"></canvas>
+            </div>
+            <div id="plotMeta" class="text-secondary" style="font-size: 0.85rem; margin-top: 1rem;"></div>
         </div>
     </div>
 </div>
@@ -184,10 +203,15 @@
             files.forEach(f => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
+                    <td><input type="checkbox" class="file-check" value="${f.filename}"
+                        onchange="updateCompareBtn()"></td>
                     <td class="name-cell">${f.experiment_name}</td>
                     <td>${f.date}</td>
                     <td>${f.time}</td>
                     <td style="display: flex; gap: 0.5rem;">
+                        <button onclick="plotFiles(['${f.filename}'])" class="btn btn-outline" style="padding: 0.25rem 0.75rem; font-size: 0.75rem;">
+                            Plot
+                        </button>
                         <a href="/download/${f.filename}" class="btn btn-outline" style="padding: 0.25rem 0.75rem; font-size: 0.75rem;">
                             Download CSV
                         </a>
@@ -208,6 +232,92 @@
         document.getElementById('backBtn').classList.remove('hidden');
         document.getElementById('newProjectBtn').classList.add('hidden');
         document.getElementById('viewTitle').textContent = projectName;
+        document.getElementById('exportAllLink').href =
+            '/api/titrations/export/' + encodeURIComponent(projectName);
+        document.getElementById('plotPanel').classList.add('hidden');
+        updateCompareBtn();
+    }
+
+    // === Plotting & comparison ===
+    let dbChart = null;
+    const PALETTE = ['#3498db', '#e74c3c', '#2ecc71', '#9b59b6', '#f39c12',
+                     '#1abc9c', '#e67e22', '#34495e'];
+
+    function updateCompareBtn() {
+        const n = document.querySelectorAll('.file-check:checked').length;
+        const btn = document.getElementById('compareBtn');
+        btn.disabled = n === 0;
+        btn.textContent = `Plot Selected (${n})`;
+    }
+
+    function compareSelected() {
+        const files = [...document.querySelectorAll('.file-check:checked')].map(c => c.value);
+        if (files.length) plotFiles(files);
+    }
+
+    async function plotFiles(filenames) {
+        const panel = document.getElementById('plotPanel');
+        const metaEl = document.getElementById('plotMeta');
+        panel.classList.remove('hidden');
+        metaEl.textContent = 'Loading...';
+
+        const datasets = [];
+        const metaBlocks = [];
+        let yLabel = 'Reading';
+
+        for (let i = 0; i < filenames.length; i++) {
+            try {
+                const res = await fetch('/api/titrations/data/' + filenames[i]);
+                const d = await res.json();
+                if (d.error) { metaBlocks.push(`${filenames[i]}: ${d.error}`); continue; }
+
+                const x = d.data['Volume (mL)'] || [];
+                const yCol = d.data['pH'] ? 'pH' : 'Reading';
+                if (d.data['pH']) yLabel = 'pH';
+                const y = d.data[yCol] || [];
+                const name = filenames[i].split('/').pop().replace('.csv', '');
+
+                datasets.push({
+                    label: name,
+                    data: x.map((v, j) => ({ x: v, y: y[j] })),
+                    borderColor: PALETTE[i % PALETTE.length],
+                    backgroundColor: PALETTE[i % PALETTE.length],
+                    tension: 0.15,
+                    pointRadius: 3,
+                    showLine: true,
+                    fill: false
+                });
+
+                // Metadata block
+                const m = d.meta || {};
+                const interesting = ['titrant', 'analyte', 'initial_volume_ml', 'solution_temp_c',
+                    'endpoint_volume_ml_interpolated', 'step_volume_ml', 'notes', 'date'];
+                const bits = interesting.filter(k => m[k]).map(k => `${k.replace(/_/g, ' ')}: ${m[k]}`);
+                if (bits.length) metaBlocks.push(`<strong>${name}</strong> — ${bits.join(' · ')}`);
+            } catch (e) {
+                metaBlocks.push(`${filenames[i]}: failed to load`);
+            }
+        }
+
+        const ctx = document.getElementById('dbChart').getContext('2d');
+        if (dbChart) dbChart.destroy();
+        dbChart = new Chart(ctx, {
+            type: 'scatter',
+            data: { datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { type: 'linear', title: { display: true, text: 'Volume (mL)' } },
+                    y: { title: { display: true, text: yLabel } }
+                },
+                plugins: { legend: { display: true, position: 'top' } }
+            }
+        });
+
+        metaEl.innerHTML = metaBlocks.join('<br>') ||
+            'No metadata in these files (recorded runs include titrant, analyte, temperature, etc.)';
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
     // Modal
