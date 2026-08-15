@@ -75,6 +75,64 @@
                 <input type="number" id="target_ph" name="target_ph" class="form-input" step="0.1" placeholder="7.0">
             </div>
 
+            <!-- Sample details (written into the CSV provenance header) -->
+            <details style="margin-bottom: 1rem;">
+                <summary style="cursor: pointer; font-weight: 600; padding: 0.5rem 0;">
+                    Sample Details (recorded in CSV)</summary>
+                <div class="form-group">
+                    <label class="form-label" for="titrant">Titrant</label>
+                    <input type="text" id="titrant" name="titrant" class="form-input"
+                        placeholder="e.g. 0.1 M NaOH">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="analyte">Analyte (what is being titrated)</label>
+                    <input type="text" id="analyte" name="analyte" class="form-input"
+                        placeholder="e.g. chitosan solution, 1% w/v">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="initial_volume_ml">Initial Sample Volume (mL)</label>
+                    <input type="number" id="initial_volume_ml" name="initial_volume_ml"
+                        class="form-input" step="0.1" placeholder="e.g. 50">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="notes">Notes</label>
+                    <input type="text" id="notes" name="notes" class="form-input"
+                        placeholder="optional">
+                </div>
+            </details>
+
+            <!-- Advanced per-run settings; defaults come from config -->
+            <details style="margin-bottom: 1rem;">
+                <summary style="cursor: pointer; font-weight: 600; padding: 0.5rem 0;">
+                    Advanced Settings</summary>
+                <div class="form-group">
+                    <label class="form-label">Recent settings</label>
+                    <select id="preset_select" class="form-input" onchange="applyPreset()">
+                        <option value="">(config defaults)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="step_volume">Step Volume (mL)</label>
+                    <input type="number" id="step_volume" name="step_volume" class="form-input"
+                        step="0.05" min="0.01" placeholder="config default">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="wait_time">Wait After Dose (s)</label>
+                    <input type="number" id="wait_time" name="wait_time" class="form-input"
+                        step="0.5" min="0" placeholder="config default">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="readings_count">Readings per Point</label>
+                    <input type="number" id="readings_count" name="readings_count" class="form-input"
+                        step="1" min="1" placeholder="config default">
+                </div>
+                <div class="form-group" id="max_volume_group" style="display: none;">
+                    <label class="form-label" for="max_volume">Max Volume Safety Cap (mL)</label>
+                    <input type="number" id="max_volume" name="max_volume" class="form-input"
+                        step="5" min="1" placeholder="config default (100)">
+                </div>
+            </details>
+
             <button type="submit" id="startBtn" class="btn btn-outline full-width">
                 Start Titration Sequence
             </button>
@@ -134,16 +192,55 @@
         const mode = document.getElementById('mode_select').value;
         const volGroup = document.getElementById('volume_input_group');
         const targetGroup = document.getElementById('target_input_group');
+        const maxVolGroup = document.getElementById('max_volume_group');
 
         if (mode === 'endpoint') {
             volGroup.style.display = 'none';
             targetGroup.style.display = 'block';
+            maxVolGroup.style.display = 'block';
             // Auto-select pH sensor
             document.getElementById('sensor_select').value = 'ph';
         } else {
             volGroup.style.display = 'block';
             targetGroup.style.display = 'none';
+            maxVolGroup.style.display = 'none';
         }
+    }
+
+    // === Advanced settings presets (last 5 used, stored server-side) ===
+    let presets = [];
+
+    async function loadPresets() {
+        try {
+            const res = await fetch('/api/titrate/presets');
+            presets = await res.json();
+            const select = document.getElementById('preset_select');
+            select.innerHTML = '<option value="">(config defaults)</option>';
+            presets.forEach((p, i) => {
+                const parts = [];
+                if (p.step_volume !== undefined) parts.push(`${p.step_volume} mL/step`);
+                if (p.wait_time !== undefined) parts.push(`${p.wait_time}s wait`);
+                if (p.readings_count !== undefined) parts.push(`${p.readings_count} readings`);
+                if (p.max_volume !== undefined) parts.push(`cap ${p.max_volume} mL`);
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.textContent = `${i + 1}. ${parts.join(', ') || 'defaults'} (${p.mode || ''})`;
+                select.appendChild(opt);
+            });
+        } catch (e) { console.error('Failed to load presets', e); }
+    }
+
+    function applyPreset() {
+        const idx = document.getElementById('preset_select').value;
+        const fields = ['step_volume', 'wait_time', 'readings_count', 'max_volume'];
+        if (idx === '') {
+            fields.forEach(f => document.getElementById(f).value = '');
+            return;
+        }
+        const p = presets[parseInt(idx)];
+        fields.forEach(f => {
+            document.getElementById(f).value = (p[f] !== undefined) ? p[f] : '';
+        });
     }
 
     // Project Management Logic
@@ -248,12 +345,12 @@
         }
     }
 
-    function onTitrationComplete(name) {
+    function onTitrationComplete(name, error, result) {
         const startBtn = document.getElementById('startBtn');
         startBtn.disabled = false;
         startBtn.textContent = 'Start Titration Sequence';
 
-        document.getElementById('statusText').textContent = 'Completed!';
+        document.getElementById('statusText').textContent = error ? 'Failed' : 'Completed!';
         document.getElementById('progressSection').classList.add('hidden');
         document.getElementById('resultsSection').classList.remove('hidden');
 
@@ -261,12 +358,35 @@
         clearSession();
         hideStopButton();
 
+        loadPresets(); // the run may have added a new preset
+
+        if (error) {
+            document.getElementById('resultsContent').innerHTML = `
+                <div style="color: var(--danger-color); font-weight: 600; margin-bottom: 1rem;">
+                    Titration stopped with an error
+                </div>
+                <div style="background: #fdf2f2; border-left: 4px solid var(--danger-color);
+                            padding: 1rem; border-radius: var(--radius-md);">
+                    <p>${error}</p>
+                    <p class="text-secondary" style="font-size: 0.875rem; margin-top: 0.5rem;">
+                        Data collected before the failure was saved to the database.</p>
+                </div>`;
+            return;
+        }
+
+        let endpointInfo = '';
+        if (result && result.endpoint_volume_ml !== undefined) {
+            endpointInfo = `<p><strong>Interpolated endpoint:</strong>
+                ${result.endpoint_volume_ml} mL (final pH ${result.final_ph?.toFixed(2)})</p>`;
+        }
+
         document.getElementById('resultsContent').innerHTML = `
                 <div class="success-message" style="color: var(--success-color); margin-bottom: 1rem;">
                     Sequence Completed Successfully
                 </div>
                 <div style="background: #f8fafc; padding: 1rem; border-radius: var(--radius-md);">
                     <p><strong>Experiment:</strong> ${name}</p>
+                    ${endpointInfo}
                     <p><a href="/database" style="color: var(--primary-color);">View in Database</a></p>
                 </div>
             `;
@@ -383,7 +503,10 @@
                 if (!status.running) {
                     clearInterval(activePollInterval);
                     activePollInterval = null;
-                    onTitrationComplete(document.getElementById('experiment_name').value || 'Experiment');
+                    onTitrationComplete(
+                        document.getElementById('experiment_name').value || 'Experiment',
+                        graphData.error || status.titration_error,
+                        graphData.result);
                 }
             } catch (e) {
                 console.error(e);
@@ -393,6 +516,7 @@
 
     // Init
     loadProjects();
+    loadPresets();
     initChart();
     checkActiveSession();
 </script>

@@ -49,30 +49,42 @@
     </div>
 
     <!-- Single Measurement Card -->
-    <div class="card" style="text-align: center;">
+    <div class="card" style="grid-column: 1 / -1;">
         <div class="card-header" style="justify-content: center;">
             <h2 class="card-title">Single Measurement</h2>
         </div>
-        <div class="form-group">
-            <label class="form-label">Sensor</label>
-            <select id="single_sensor_select" class="form-input">
-                <option value="ec">Conductivity (EC)</option>
-                <option value="ph">pH Probe</option>
-            </select>
-        </div>
-        <p class="text-secondary mb-4">Take a one-time reading (avg of 10s).</p>
+        <div style="display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 1.5rem; align-items: start;">
+            <div>
+                <div class="form-group">
+                    <label class="form-label">Sensor</label>
+                    <select id="single_sensor_select" class="form-input">
+                        <option value="ec">Conductivity (EC)</option>
+                        <option value="ph">pH Probe</option>
+                        <option value="temp">Temperature (RTD)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Max Duration (s)</label>
+                    <input type="number" id="single_duration" class="form-input" value="30" min="5" max="600" step="5">
+                </div>
+                <p class="text-secondary mb-4" style="font-size: 0.875rem;">
+                    Readings are polled ~every second and plotted live. If the value
+                    plateaus, the stable reading is selected automatically and the
+                    measurement stops early.
+                </p>
 
-        <button id="measureBtn" onclick="measureSingle()" class="btn btn-primary full-width">
-            Measure
-        </button>
+                <button id="measureBtn" onclick="toggleMeasurement()" class="btn btn-primary full-width">
+                    Start Measurement
+                </button>
 
-        <div id="measureProgress" class="progress-container hidden">
-            <div id="measureBar" class="progress-bar"></div>
-        </div>
-
-        <div id="singleResult" class="hidden mt-4"
-            style="background: #f8fafc; padding: 1rem; border-radius: var(--radius-md);">
-            <!-- Results populated by JS -->
+                <div id="singleResult" class="hidden mt-4"
+                    style="background: #f8fafc; padding: 1rem; border-radius: var(--radius-md); text-align: center;">
+                    <!-- Results populated by JS -->
+                </div>
+            </div>
+            <div style="position: relative; min-height: 260px;">
+                <canvas id="measureChart"></canvas>
+            </div>
         </div>
     </div>
 
@@ -86,10 +98,13 @@
                 <div class="text-secondary">Current Date</div>
                 <div class="h3" id="dash-date" style="font-size: 1.5rem; font-weight: 600;">Loading...</div>
             </div>
+            {% for device, age in cal_dates.items() %}
             <div class="text-center">
-                <div class="text-secondary">Last Calibration</div>
-                <div class="h3" style="font-size: 1.5rem; font-weight: 600;">{{ last_calibration }}</div>
+                <div class="text-secondary">{{ device }} Calibrated</div>
+                <div class="h3" style="font-size: 1.25rem; font-weight: 600;
+                    {% if age == 'Never' %}color: var(--danger-color);{% endif %}">{{ age }}</div>
             </div>
+            {% endfor %}
             <div class="text-center">
                 <div class="text-secondary">System Status</div>
                 <div class="h3"
@@ -101,63 +116,172 @@
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     document.getElementById('dash-date').textContent = new Date().toLocaleDateString();
 
-    async function measureSingle() {
-        const btn = document.getElementById('measureBtn');
-        const progress = document.getElementById('measureProgress');
-        const bar = document.getElementById('measureBar');
-        const resultDiv = document.getElementById('singleResult');
+    // --- Single Measurement (timed, live-plotted, plateau detection) ---
+    let measureChart = null;
+    let pollTimer = null;
+    let measuring = false;
+
+    const SENSOR_META = {
+        ph:   { label: 'pH',                   unit: 'pH',    decimals: 2 },
+        ec:   { label: 'Conductivity (µS/cm)', unit: 'µS/cm', decimals: 1 },
+        temp: { label: 'Temperature (°C)',     unit: '°C',    decimals: 2 }
+    };
+
+    function initMeasureChart(sensor) {
+        const ctx = document.getElementById('measureChart').getContext('2d');
+        if (measureChart) measureChart.destroy();
+        const label = SENSOR_META[sensor].label;
+        measureChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: label,
+                    data: [],
+                    borderColor: '#3498db',
+                    backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                    tension: 0.2,
+                    pointRadius: 3,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                scales: {
+                    x: { title: { display: true, text: 'Time (s)' } },
+                    y: { title: { display: true, text: label } }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+
+    async function toggleMeasurement() {
+        if (measuring) {
+            await fetch('/api/measure/stop', { method: 'POST' });
+            return; // poller will pick up the final state
+        }
+
         const sensor = document.getElementById('single_sensor_select').value;
+        const duration = parseFloat(document.getElementById('single_duration').value);
+        const resultDiv = document.getElementById('singleResult');
+        const btn = document.getElementById('measureBtn');
 
-        btn.disabled = true;
-        btn.textContent = 'Measuring...';
-        progress.classList.remove('hidden');
         resultDiv.classList.add('hidden');
-
-        let width = 0;
-        const interval = setInterval(() => {
-            width += 1;
-            if (width > 95) width = 95;
-            bar.style.width = width + '%';
-        }, 120);
+        initMeasureChart(sensor);
 
         try {
-            // Need API endpoint for single measure or adapt existing
-            // Using status API for now is instant, we want an averaged reading...
-            // Creating a Quick Read logic here or assume checking status?
-            // For now, let's just wait 2s and check status
+            const res = await fetch('/api/measure/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sensor, duration })
+            });
+            const data = await res.json();
+            if (data.error) {
+                showMeasureError(data.error);
+                return;
+            }
+        } catch (e) {
+            showMeasureError('Network Error');
+            return;
+        }
 
-            // Wait 2 seconds
-            await new Promise(r => setTimeout(r, 2000));
+        measuring = true;
+        btn.textContent = 'Stop';
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-danger');
+        pollTimer = setInterval(pollMeasurement, 1000);
+    }
 
-            const response = await fetch('/api/status');
-            const data = await response.json();
+    async function pollMeasurement() {
+        try {
+            const res = await fetch('/api/measure/data');
+            const data = await res.json();
 
-            clearInterval(interval);
-            bar.style.width = '100%';
+            // Update chart with all points (idempotent full refresh)
+            if (measureChart && data.elapsed) {
+                measureChart.data.labels = data.elapsed;
+                measureChart.data.datasets[0].data = data.values;
+                measureChart.update();
+            }
 
-            let val = (sensor === 'ph') ? data.ph : data.ec;
-            let unit = (sensor === 'ph') ? 'pH' : 'µS/cm';
-
-            resultDiv.innerHTML = `
-                <div style="font-size: 0.875rem; color: var(--text-secondary);">Reading</div>
-                <div style="font-size: 1.5rem; font-weight: 600; color: var(--primary-color);">
-                    ${val.toFixed(2)} ${unit}
-                </div>
-            `;
-            resultDiv.classList.remove('hidden');
-
-        } catch (error) {
-            clearInterval(interval);
-            resultDiv.innerHTML = `<span style="color: var(--danger-color)">Network Error</span>`;
-            resultDiv.classList.remove('hidden');
-        } finally {
-            btn.disabled = false;
-            btn.textContent = 'Measure';
-            setTimeout(() => progress.classList.add('hidden'), 1000);
+            if (!data.running) {
+                finishMeasurement(data);
+            }
+        } catch (e) {
+            console.error('Measurement poll error:', e);
         }
     }
+
+    function finishMeasurement(data) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+        measuring = false;
+
+        const btn = document.getElementById('measureBtn');
+        btn.textContent = 'Start Measurement';
+        btn.classList.remove('btn-danger');
+        btn.classList.add('btn-primary');
+
+        const resultDiv = document.getElementById('singleResult');
+        const meta = SENSOR_META[data.sensor] || SENSOR_META.ec;
+
+        if (data.error) {
+            showMeasureError(data.error);
+            return;
+        }
+        if (data.result === null || data.result === undefined) {
+            showMeasureError('No result recorded');
+            return;
+        }
+
+        const badge = data.stable
+            ? `<span style="color: var(--success-color); font-size: 0.875rem;">
+                   ✓ Plateau reached at ${data.stable_at}s</span>`
+            : `<span style="color: var(--warning-color, #e67e22); font-size: 0.875rem;">
+                   ⚠ No plateau — mean of final readings</span>`;
+
+        resultDiv.innerHTML = `
+            <div style="font-size: 0.875rem; color: var(--text-secondary);">Selected Value</div>
+            <div style="font-size: 1.75rem; font-weight: 600; color: var(--primary-color);">
+                ${data.result.toFixed(meta.decimals)} ${meta.unit}
+            </div>
+            ${badge}
+        `;
+        resultDiv.classList.remove('hidden');
+    }
+
+    function showMeasureError(msg) {
+        const resultDiv = document.getElementById('singleResult');
+        resultDiv.innerHTML = `<span style="color: var(--danger-color)">${msg}</span>`;
+        resultDiv.classList.remove('hidden');
+    }
+
+    // Resume a measurement already running on the backend (e.g. after a
+    // page refresh mid-run) instead of orphaning it.
+    (async function resumeActiveMeasurement() {
+        try {
+            const res = await fetch('/api/measure/data');
+            const data = await res.json();
+            if (data.running) {
+                document.getElementById('single_sensor_select').value = data.sensor;
+                if (data.duration) document.getElementById('single_duration').value = data.duration;
+                initMeasureChart(data.sensor);
+                measuring = true;
+                const btn = document.getElementById('measureBtn');
+                btn.textContent = 'Stop';
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-danger');
+                pollTimer = setInterval(pollMeasurement, 1000);
+                pollMeasurement();
+            }
+        } catch (e) { /* no active measurement */ }
+    })();
 </script>
 {% endblock %}

@@ -11,6 +11,16 @@
 </head>
 
 <body>
+    {% if is_mock %}
+    <div style="position: fixed; bottom: 0; left: 0; right: 0; z-index: 1000;
+                background: #e67e22; color: white; text-align: center;
+                padding: 8px 16px; font-weight: 600; font-size: 14px;
+                box-shadow: 0 -2px 8px rgba(0,0,0,0.2);">
+        &#9888; DEV MODE &mdash; ALL PROBE DATA IS SIMULATED ({{ titrator_env }}).
+        Set <code style="background:rgba(0,0,0,0.2); padding:1px 5px; border-radius:3px;">TITRATOR_ENV=PROD</code>
+        on the instrument to use real hardware.
+    </div>
+    {% endif %}
     <aside class="sidebar">
         <div class="brand" style="justify-content: center;">
             <img src="{{ url_for('static', filename='logo.png') }}" alt="Roumeli Lab Logo"
@@ -87,12 +97,15 @@
                 <div id="status-pump" class="status-badge dot off">
                     <span>Pump OFF</span>
                 </div>
-                <!-- PH and EC badges -->
+                <!-- PH, EC and Temperature badges -->
                 <div id="status-ph" class="status-badge">
                     <span>pH: --</span>
                 </div>
                 <div id="status-ec" class="status-badge">
                     <span>EC: --</span>
+                </div>
+                <div id="status-temp" class="status-badge">
+                    <span>Temp: --</span>
                 </div>
             </div>
         </header>

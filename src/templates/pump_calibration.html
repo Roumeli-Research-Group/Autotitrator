@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pump Calibration Wizard</title>
+    <title>Pump Calibration</title>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <style>
         body {
@@ -14,7 +14,6 @@
             padding: 20px;
             display: flex;
             justify-content: center;
-            min-height: 100vh;
         }
 
         .container {
@@ -23,22 +22,14 @@
             border-radius: 8px;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
             width: 100%;
-            max-width: 600px;
+            max-width: 760px;
         }
 
-        h1 {
-            text-align: center;
-            color: #2c3e50;
-        }
+        h1 { text-align: center; color: #2c3e50; margin-top: 0; }
+        h2 { color: #2c3e50; }
 
-        .step {
-            display: none;
-            margin-top: 20px;
-        }
-
-        .step.active {
-            display: block;
-        }
+        .stage { display: none; margin-top: 20px; }
+        .stage.active { display: block; }
 
         .btn {
             padding: 10px 20px;
@@ -47,24 +38,29 @@
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 16px;
+            font-size: 15px;
             margin-top: 10px;
-            width: 100%;
         }
+        .btn.full { width: 100%; }
+        .btn:disabled { background: #bdc3c7; cursor: not-allowed; }
+        .btn.secondary { background: #7f8c8d; }
+        .btn.danger { background: #e74c3c; }
+        .btn.small { padding: 6px 12px; font-size: 13px; margin-top: 0; }
 
-        .btn:disabled {
-            background: #bdc3c7;
-            cursor: not-allowed;
-        }
-
-        input {
+        input, select {
             width: 100%;
-            padding: 10px;
-            margin-top: 5px;
+            padding: 8px;
+            margin-top: 4px;
             border: 2px solid #bdc3c7;
             border-radius: 4px;
             box-sizing: border-box;
         }
+        input.narrow { width: 100px; padding: 5px; }
+
+        label { font-size: 14px; color: #34495e; }
+
+        .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
 
         .status {
             margin-top: 15px;
@@ -73,191 +69,790 @@
             border-radius: 4px;
             text-align: center;
         }
+        .status.running { background: #fdf2d0; }
+        .status.ok { background: #d5f5e3; }
+        .status.bad { background: #fadbd8; }
 
-        table {
-            width: 100%;
-            margin-top: 20px;
-            border-collapse: collapse;
-        }
+        table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 14px; }
+        th, td { padding: 7px 6px; border-bottom: 1px solid #ddd; text-align: center; }
+        th { background: #f8f9fa; }
 
-        th,
-        td {
-            padding: 10px;
-            border-bottom: 1px solid #ddd;
-            text-align: center;
-        }
-
-        th {
+        .note {
+            font-size: 13px;
+            color: #7f8c8d;
             background: #f8f9fa;
+            border-left: 3px solid #3498db;
+            padding: 8px 12px;
+            margin: 10px 0;
         }
+        .warn-list { color: #b9770e; font-size: 14px; }
+        .kpi { font-size: 26px; font-weight: 700; color: #2c3e50; }
+        .kpi-label { font-size: 12px; color: #7f8c8d; text-transform: uppercase; }
+        .check-pass { color: #1e8449; }
+        .check-fail { color: #c0392b; }
+        .topnav { display: flex; justify-content: space-between; align-items: center; }
+        .topnav a { color: #3498db; text-decoration: none; font-size: 14px; }
     </style>
 </head>
 
 <body>
+    {% if is_mock %}
+    <div style="position: fixed; bottom: 0; left: 0; right: 0; z-index: 1000;
+                background: #e67e22; color: white; text-align: center;
+                padding: 8px 16px; font-weight: 600; font-size: 14px;">
+        &#9888; DEV MODE &mdash; PUMP AND PROBES ARE SIMULATED ({{ titrator_env }})
+    </div>
+    {% endif %}
     <div class="container">
-        <h1>Pump Calibration Wizard</h1>
+        <div class="topnav">
+            <a href="/calibration">&larr; Back to Calibration</a>
+            <a href="#" onclick="resetWizard(); return false;">Reset wizard</a>
+        </div>
+        <h1>Pump Flow Rate Calibration</h1>
 
-        <!-- Step 1: Initial Setup -->
-        <div id="step-setup" class="step active">
-            <h2>Step 1: Setup</h2>
-            <p>Enter the voltage you will use for calibration.</p>
-            <label for="voltage">Voltage (V):</label>
-            <input type="number" id="voltage" step="0.1" value="12.0">
-            <button class="btn" onclick="startCalibration()">Start Calibration</button>
+        <!-- MODE SELECT -->
+        <div id="stage-mode" class="stage active">
+            <p>Gravimetric calibration of the relay-switched pump. The two-constant model
+                <code>V = Q &times; (t<sub>on</sub> &minus; &tau;)</code> separates the true flow rate
+                <strong>Q</strong> from the per-actuation dead time <strong>&tau;</strong>
+                (relay pull-in, spin-up, line pressurisation) charged on every dose.</p>
+            <div id="current-cal" class="note">Loading current calibration...</div>
+            <button class="btn full" onclick="startFull()">Full Calibration (Stages 0&ndash;3)</button>
+            <button class="btn full secondary" id="btn-quick" onclick="startQuick()">
+                Quick Re-cal (fixed step, needs existing calibration)</button>
         </div>
 
-        <!-- Step 2: Warmup -->
-        <div id="step-warmup" class="step">
-            <h2>Step 2: Warmup</h2>
-            <p>Running pump for 10 seconds to prime lines. Please collect waste.</p>
-            <div id="warmup-status" class="status">Waiting...</div>
-        </div>
-
-        <!-- Step 3: Measurement Loop -->
-        <div id="step-measure" class="step">
-            <h2>Step 3: Measurement <span id="current-cycle">1</span>/5</h2>
-            <p>Target Duration: <strong id="target-duration">10</strong> seconds</p>
-            <p>1. Place collection beaker.</p>
-            <p>2. Click 'Run Pump'.</p>
-            <button class="btn" id="btn-run-pump" onclick="runPumpMeasurement()">Run Pump</button>
-            <div id="measure-status" class="status" style="display:none">Pumping...</div>
-
-            <div id="input-area" style="display:none; margin-top: 15px;">
-                <label for="volume-input">Enter Volume Eluted (mL):</label>
-                <input type="number" id="volume-input" step="0.01">
-                <button class="btn" onclick="recordMeasurement()">Next</button>
+        <!-- SETUP -->
+        <div id="stage-setup" class="stage">
+            <h2>Setup</h2>
+            <div class="note">
+                Prime until the line is visibly bubble-free (bubbles are the biggest error source).
+                Plumb exactly as for a real titration: same tubing, length, outlet height and
+                back-pressure. Use distilled water and an analytical balance (&ge; 0.001 g).
             </div>
+            <div class="grid3">
+                <div>
+                    <label>Water temp (&deg;C)</label>
+                    <input type="number" id="setup-temp" step="0.1" value="25.0">
+                    <button class="btn small full" onclick="readTempProbe()">Read from probe</button>
+                </div>
+                <div>
+                    <label>Step volume (mL)</label>
+                    <input type="number" id="setup-step" step="0.05" min="0.01">
+                </div>
+                <div>
+                    <label>Inter-pulse gap (s)</label>
+                    <input type="number" id="setup-gap" step="0.1" value="0.3" min="0" max="10">
+                </div>
+            </div>
+            <div class="grid3" style="margin-top: 10px;">
+                <div>
+                    <label>Replicates per on-time</label>
+                    <input type="number" id="setup-reps" value="3" min="1" max="5">
+                </div>
+                <div>
+                    <label>Target mass per trial (g)</label>
+                    <input type="number" id="setup-mass" value="5" min="1" max="20">
+                </div>
+                <div>
+                    <label>Verify pulses (Stage 3)</label>
+                    <input type="number" id="setup-verify" value="100" min="10" max="200">
+                </div>
+            </div>
+            <div class="note" id="setup-density">&rho; = --</div>
+            <button class="btn full" onclick="finishSetup()">Continue to Stage 0</button>
         </div>
 
-        <!-- Step 4: Results -->
-        <div id="step-results" class="step">
-            <h2>Calibration Complete</h2>
-            <p>Calculated Flow Rate:</p>
-            <h1 id="final-flow-rate">...</h1>
+        <!-- STAGE 0: BOOTSTRAP -->
+        <div id="stage-0" class="stage">
+            <h2>Stage 0 &mdash; Bootstrap</h2>
+            <p>Three continuous runs (5, 10, 15 s). Over these durations the dead time
+                contributes &lt; 0.2%, so <code>Q<sub>rough</sub> = &Sigma;mass / (&rho; &times; 30)</code>
+                is good to ~1% &mdash; enough to size the duration series.</p>
+            <div class="note">Place the <strong>tared</strong> beaker under the outlet before each run.
+                Weigh and record after each run, then re-tare.</div>
+            <table>
+                <thead><tr><th>Run</th><th>Duration</th><th></th><th>Mass (g)</th></tr></thead>
+                <tbody id="stage0-rows"></tbody>
+            </table>
+            <div id="stage0-status" class="status" style="display:none;"></div>
+            <div id="stage0-result" class="note" style="display:none;"></div>
+            <button class="btn full" id="stage0-next" onclick="finishStage0()" disabled>
+                Continue to Stage 1</button>
+        </div>
+
+        <!-- STAGE 1: DURATION SERIES -->
+        <div id="stage-1" class="stage">
+            <h2>Stage 1 &mdash; Duration Series</h2>
+            <p>Fire N pulses at each fixed on-time, weigh the total, and record it.
+                The on-times span 0.5&times; to 12&times; your operating point
+                <span id="stage1-top"></span>. Keep the beaker covered between weighings.</p>
             <table>
                 <thead>
-                    <tr>
-                        <th>Time (s)</th>
-                        <th>Volume (mL)</th>
-                        <th>Rate (mL/s)</th>
-                    </tr>
+                    <tr><th>on-time (s)</th><th>N</th><th>~mass</th><th>rep</th><th></th><th>mass (g)</th></tr>
                 </thead>
-                <tbody id="results-table"></tbody>
+                <tbody id="stage1-rows"></tbody>
             </table>
-            <button class="btn" onclick="location.reload()">Restart</button>
+            <div id="stage1-status" class="status" style="display:none;"></div>
+            <button class="btn full" id="stage1-next" onclick="runFit()" disabled>
+                Fit (Stage 2)</button>
+        </div>
+
+        <!-- STAGE 2: FIT -->
+        <div id="stage-2" class="stage">
+            <h2>Stage 2 &mdash; Fit</h2>
+            <div class="grid3" style="text-align:center; margin: 15px 0;">
+                <div><div class="kpi" id="fit-q">--</div><div class="kpi-label">Q (mL/s)</div></div>
+                <div><div class="kpi" id="fit-tau">--</div><div class="kpi-label">&tau; (ms)</div></div>
+                <div><div class="kpi" id="fit-r2">--</div><div class="kpi-label">R&sup2;</div></div>
+            </div>
+            <table>
+                <thead><tr><th>Check</th><th>Expectation</th><th>Result</th></tr></thead>
+                <tbody id="fit-checks"></tbody>
+            </table>
+            <div id="fit-warnings" class="warn-list"></div>
+            <button class="btn full" onclick="setupVerify()">Continue to Verification</button>
+            <button class="btn full secondary" onclick="setupAux()">Run Auxiliary Checks (recommended)</button>
+            <button class="btn full secondary" onclick="showStage('stage-1')">Back to trials</button>
+        </div>
+
+        <!-- AUXILIARY CHECKS (things the fit cannot see) -->
+        <div id="stage-aux" class="stage">
+            <h2>Auxiliary Checks</h2>
+            <p>Two checks the fit cannot make. Both are advisory &mdash; a failure means the
+                two-constant model needs qualifying, not that the fit is wrong.</p>
+
+            <h3 style="font-size: 16px;">A &mdash; Burst-length check</h3>
+            <p style="font-size: 14px;">Same on-time (<span id="aux-t"></span> s) at N = 10, 40, 100.
+                Volume per pulse should be identical; if small-N runs come out low there is a
+                per-run priming penalty on top of &tau;, and calibration must be done at a burst
+                length close to the real titration.</p>
+            <table>
+                <thead><tr><th>N</th><th></th><th>mass (g)</th><th>v/pulse</th></tr></thead>
+                <tbody id="aux-burst-rows"></tbody>
+            </table>
+            <div id="aux-burst-verdict" class="note" style="display:none;"></div>
+
+            <h3 style="font-size: 16px; margin-top: 25px;">B &mdash; Gap check</h3>
+            <p style="font-size: 14px;">Same on-time and N (<span id="aux-gap-desc"></span>) at gaps
+                0.2 s and 5 s. If they differ, the pump is still coasting at the short gap and the
+                calibration is only valid at the gap it was measured with.</p>
+            <table>
+                <thead><tr><th>gap (s)</th><th></th><th>mass (g)</th><th>v/pulse</th></tr></thead>
+                <tbody id="aux-gap-rows"></tbody>
+            </table>
+            <div id="aux-gap-verdict" class="note" style="display:none;"></div>
+
+            <div id="aux-status" class="status" style="display:none;"></div>
+            <button class="btn full" onclick="setupVerify()">Continue to Verification</button>
+        </div>
+
+        <!-- STAGE 3: VERIFY -->
+        <div id="stage-3" class="stage">
+            <h2>Stage 3 &mdash; Verification</h2>
+            <p id="verify-desc"></p>
+            <div style="display:flex; gap:10px; align-items:end;">
+                <button class="btn" id="verify-fire" onclick="fireVerify()">Fire</button>
+                <div style="flex:1;">
+                    <label>Measured mass (g)</label>
+                    <input type="number" id="verify-mass" step="0.001" oninput="checkVerify()">
+                </div>
+            </div>
+            <div id="verify-status" class="status" style="display:none;"></div>
+            <div id="verify-result" class="status" style="display:none;"></div>
+            <button class="btn full" id="verify-save" onclick="saveCalibration()" disabled>
+                Save Calibration</button>
+        </div>
+
+        <!-- QUICK RE-CAL -->
+        <div id="stage-quick" class="stage">
+            <h2>Quick Re-cal</h2>
+            <p id="quick-desc"></p>
+            <div class="note">Valid only while the step size stays fixed: at one injection size Q and
+                &tau; collapse into a single effective rate. One pass lands within ~1%, the repeat
+                within ~0.1%.</div>
+            <div id="quick-pass-area"></div>
+            <div id="quick-status" class="status" style="display:none;"></div>
+            <button class="btn full" id="quick-save" onclick="saveQuick()" disabled>Save Updated Q</button>
+        </div>
+
+        <!-- DONE -->
+        <div id="stage-done" class="stage">
+            <h2>Calibration Saved</h2>
+            <div id="done-summary" class="status ok"></div>
+            <button class="btn full" onclick="resetWizard()">Start Over</button>
         </div>
     </div>
 
     <script>
-        const durations = [10, 20, 30, 40, 50];
-        let currentIdx = 0;
-        let measurements = [];
-        let voltage = 12.0;
+        const LS_KEY = 'pump_cal_state_v1';
+        const MULTIPLIERS = [0.5, 0.75, 1.5, 3, 6, 12];
+        const STAGE0_RUNS = [5, 10, 15];
 
-        function showStep(id) {
-            document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+        // ---- state -------------------------------------------------------
+        let S = {
+            stage: 'stage-mode',
+            temp: 25.0, rho: null, step: 0.5, gap: 0.3, reps: 3,
+            targetMass: 5, verifyPulses: 100,
+            qRough: null,
+            stage0Mass: [null, null, null],
+            sheet: [],        // rows: {t, n, masses: [..]}
+            fit: null,
+            verifyOnTime: null, verifyTarget: null, verifyMass: null,
+            aux: null,   // {t, burstN:[10,40,100], burstMass:[..], gapN, gaps:[0.2,5], gapMass:[..]}
+            quick: { qOld: null, tau: null, passes: [] }
+        };
+        let storedCal = null;
+
+        function save() { localStorage.setItem(LS_KEY, JSON.stringify(S)); }
+        function showStage(id) {
+            document.querySelectorAll('.stage').forEach(el => el.classList.remove('active'));
             document.getElementById(id).classList.add('active');
+            S.stage = id; save();
+        }
+        function resetWizard() {
+            localStorage.removeItem(LS_KEY);
+            location.reload();
         }
 
-        function startCalibration() {
-            voltage = parseFloat(document.getElementById('voltage').value);
-            if (!voltage) return alert("Enter valid voltage");
-
-            showStep('step-warmup');
-            runWarmup();
-        }
-
-        async function runWarmup() {
-            const status = document.getElementById('warmup-status');
-            status.innerText = "Running Warmup (10s)...";
-
+        // ---- init --------------------------------------------------------
+        window.addEventListener('DOMContentLoaded', async () => {
             try {
-                await fetch('/start_pump_duration', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ duration: 10 })
-                });
-                status.innerText = "Warmup Complete. Proceeding...";
-                setTimeout(() => setupMeasurementStep(), 2000);
-            } catch (e) {
-                alert("Error running pump: " + e);
+                const res = await fetch('/api/pump/calibration');
+                storedCal = await res.json();
+                const el = document.getElementById('current-cal');
+                if (storedCal.PUMP_FLOW_RATE_MLS) {
+                    const tau = storedCal.PUMP_DEAD_TIME_S;
+                    el.innerHTML = `Current: Q = <strong>${storedCal.PUMP_FLOW_RATE_MLS.toFixed(4)} mL/s</strong>,
+                        &tau; = <strong>${tau !== null && tau !== undefined ? (tau * 1000).toFixed(1) + ' ms' : 'not fitted'}</strong>,
+                        step ${storedCal.PUMP_CAL_STEP_VOLUME_ML ?? '?'} mL,
+                        calibrated ${storedCal.PUMP_CAL_DATE ?? '?'}
+                        (R&sup2; ${storedCal.PUMP_CAL_R2 ?? 'n/a'})`;
+                } else {
+                    el.textContent = `No two-constant calibration stored yet. Legacy flow rate: ${storedCal.DEFAULT_FLOW_RATE} mL/s (tau assumed 0).`;
+                    document.getElementById('btn-quick').disabled = true;
+                }
+                document.getElementById('setup-step').value =
+                    storedCal.PUMP_CAL_STEP_VOLUME_ML || storedCal.VOLUME_PER_STEP || 0.5;
+            } catch (e) { console.error(e); }
+
+            const savedState = localStorage.getItem(LS_KEY);
+            if (savedState) {
+                const parsed = JSON.parse(savedState);
+                if (parsed.stage !== 'stage-mode' &&
+                    confirm('Resume the calibration in progress?')) {
+                    S = parsed;
+                    rebuildUI();
+                    return;
+                }
+                localStorage.removeItem(LS_KEY);
             }
+        });
+
+        function rebuildUI() {
+            // Re-render dynamic sections from state, then show the saved stage
+            if (S.stage === 'stage-0' || S.qRough !== null) renderStage0();
+            if (S.sheet.length) renderStage1();
+            if (S.fit) renderFit(S.fit);
+            if (S.stage === 'stage-aux' && S.aux) renderAux();
+            if (S.stage === 'stage-3') setupVerify(true);
+            if (S.stage === 'stage-quick') renderQuick();
+            showStage(S.stage);
         }
 
-        function setupMeasurementStep() {
-            if (currentIdx >= durations.length) {
-                finalizeCalibration();
-                return;
-            }
-            showStep('step-measure');
-            document.getElementById('current-cycle').innerText = currentIdx + 1;
-            document.getElementById('target-duration').innerText = durations[currentIdx];
-            document.getElementById('btn-run-pump').style.display = 'block';
-            document.getElementById('measure-status').style.display = 'none';
-            document.getElementById('input-area').style.display = 'none';
-            document.getElementById('volume-input').value = '';
-        }
+        // ---- setup -------------------------------------------------------
+        function startFull() { showStage('stage-setup'); updateDensity(); }
 
-        async function runPumpMeasurement() {
-            const btn = document.getElementById('btn-run-pump');
-            const status = document.getElementById('measure-status');
-            const duration = durations[currentIdx];
-
-            btn.style.display = 'none';
-            status.style.display = 'block';
-            status.innerText = `Running for ${duration} seconds...`;
-
+        async function readTempProbe() {
             try {
-                await fetch('/start_pump_duration', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ duration: duration })
-                });
+                const res = await fetch('/api/probe_temp_density');
+                const d = await res.json();
+                if (d.temp_c !== null) {
+                    document.getElementById('setup-temp').value = d.temp_c.toFixed(1);
+                    updateDensity();
+                } else {
+                    alert('Temperature probe not available - enter manually.');
+                }
+            } catch (e) { alert('Failed to read temperature probe.'); }
+        }
 
-                status.style.display = 'none';
-                document.getElementById('input-area').style.display = 'block';
-            } catch (e) {
-                alert("Error: " + e);
-                btn.style.display = 'block';
-                status.style.display = 'none';
+        function densityFor(t) {
+            // Mirror of server table (linear interpolation, clamped)
+            const T = [15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35];
+            const R = [0.99910,0.99895,0.99878,0.99860,0.99841,0.99821,0.99799,0.99777,
+                       0.99754,0.99730,0.99705,0.99679,0.99652,0.99626,0.99597,0.99565,
+                       0.99534,0.99503,0.99470,0.99437,0.99403];
+            if (t <= T[0]) return R[0];
+            if (t >= T[T.length-1]) return R[R.length-1];
+            const i = T.findIndex(v => v >= t);
+            const f = (t - T[i-1]) / (T[i] - T[i-1]);
+            return R[i-1] + f * (R[i] - R[i-1]);
+        }
+
+        function updateDensity() {
+            const t = parseFloat(document.getElementById('setup-temp').value);
+            if (!isNaN(t)) {
+                const rho = densityFor(t);
+                document.getElementById('setup-density').innerHTML =
+                    `&rho; = ${rho.toFixed(5)} g/mL at ${t.toFixed(1)} &deg;C`;
             }
         }
+        document.getElementById('setup-temp').addEventListener('input', updateDensity);
 
-        function recordMeasurement() {
-            const vol = parseFloat(document.getElementById('volume-input').value);
-            if (!vol || vol <= 0) return alert("Enter valid volume");
-
-            measurements.push({
-                time: durations[currentIdx],
-                volume: vol
-            });
-
-            currentIdx++;
-            setupMeasurementStep();
+        function finishSetup() {
+            S.temp = parseFloat(document.getElementById('setup-temp').value);
+            S.step = parseFloat(document.getElementById('setup-step').value);
+            S.gap = parseFloat(document.getElementById('setup-gap').value);
+            S.reps = parseInt(document.getElementById('setup-reps').value);
+            S.targetMass = parseFloat(document.getElementById('setup-mass').value);
+            S.verifyPulses = parseInt(document.getElementById('setup-verify').value);
+            S.rho = densityFor(S.temp);
+            if (!S.temp || !S.step || isNaN(S.gap)) return alert('Fill in all setup fields');
+            renderStage0();
+            showStage('stage-0');
         }
 
-        async function finalizeCalibration() {
-            showStep('step-results');
-            const tbody = document.getElementById('results-table');
-            let totalRate = 0;
+        // ---- pulse-train helper ------------------------------------------
+        async function firePulses(onTime, pulses, gap, statusEl) {
+            statusEl.style.display = 'block';
+            statusEl.className = 'status running';
+            const est = (pulses * (onTime + gap)).toFixed(0);
+            statusEl.textContent = `Firing ${pulses} pulse(s) of ${onTime.toFixed(3)}s (~${est}s)...`;
 
-            measurements.forEach(m => {
-                const rate = m.volume / m.time;
-                totalRate += rate;
-                const row = `<tr><td>${m.time}</td><td>${m.volume}</td><td>${rate.toFixed(4)}</td></tr>`;
-                tbody.innerHTML += row;
-            });
-
-            const avgRate = totalRate / measurements.length;
-            document.getElementById('final-flow-rate').innerText = `${avgRate.toFixed(4)} mL/s`;
-
-            // Send to server
-            await fetch('/update_flow_rate', {
+            const res = await fetch('/api/pump/pulse', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ flow_rate: avgRate, voltage: voltage })
+                body: JSON.stringify({ on_time: onTime, pulses: pulses, gap: gap })
             });
-            alert("System Flow Rate Updated Successfully!");
+            const start = await res.json();
+            if (start.error) {
+                statusEl.className = 'status bad';
+                statusEl.textContent = 'Error: ' + start.error;
+                throw new Error(start.error);
+            }
+
+            // Poll until done
+            while (true) {
+                await new Promise(r => setTimeout(r, 500));
+                const st = await (await fetch('/api/pump/pulse_status')).json();
+                if (st.error) {
+                    statusEl.className = 'status bad';
+                    statusEl.textContent = 'Error: ' + st.error;
+                    throw new Error(st.error);
+                }
+                statusEl.textContent = `Pulse ${st.fired}/${st.total}...`;
+                if (!st.running) break;
+            }
+            statusEl.className = 'status ok';
+            statusEl.textContent = 'Done. Weigh the beaker and enter the mass.';
+        }
+
+        // ---- stage 0 -----------------------------------------------------
+        function renderStage0() {
+            const tbody = document.getElementById('stage0-rows');
+            tbody.innerHTML = '';
+            STAGE0_RUNS.forEach((dur, i) => {
+                const m = S.stage0Mass[i];
+                tbody.innerHTML += `<tr>
+                    <td>${i + 1}</td>
+                    <td>${dur} s</td>
+                    <td><button class="btn small" onclick="runStage0(${i})">Run</button></td>
+                    <td><input class="narrow" type="number" step="0.001" id="s0-mass-${i}"
+                        value="${m ?? ''}" oninput="stage0Input(${i}, this.value)"></td>
+                </tr>`;
+            });
+            updateStage0();
+        }
+
+        async function runStage0(i) {
+            const statusEl = document.getElementById('stage0-status');
+            try {
+                await firePulses(STAGE0_RUNS[i], 1, 0, statusEl);
+                document.getElementById(`s0-mass-${i}`).focus();
+            } catch (e) { /* shown in status */ }
+        }
+
+        function stage0Input(i, val) {
+            S.stage0Mass[i] = val === '' ? null : parseFloat(val);
+            updateStage0(); save();
+        }
+
+        function updateStage0() {
+            const all = S.stage0Mass.every(m => m !== null && m > 0);
+            document.getElementById('stage0-next').disabled = !all;
+            const resEl = document.getElementById('stage0-result');
+            if (all) {
+                const total = S.stage0Mass.reduce((a, b) => a + b, 0);
+                const totalTime = STAGE0_RUNS.reduce((a, b) => a + b, 0);
+                S.qRough = total / (S.rho * totalTime);
+                resEl.style.display = 'block';
+                resEl.innerHTML = `Q<sub>rough</sub> = ${total.toFixed(3)} /
+                    (${S.rho.toFixed(5)} &times; ${totalTime}) =
+                    <strong>${S.qRough.toFixed(4)} mL/s</strong>`;
+            } else {
+                resEl.style.display = 'none';
+            }
+        }
+
+        function finishStage0() {
+            buildSheet();
+            renderStage1();
+            showStage('stage-1');
+        }
+
+        // ---- stage 1 -----------------------------------------------------
+        function buildSheet() {
+            const tOp = S.step / S.qRough;
+            S.sheet = MULTIPLIERS.map(mult => {
+                let t = Math.max(0.05, Math.min(30, tOp * mult));
+                t = Math.round(t * 1000) / 1000;
+                // N sized for ~targetMass g; 0.85 allows for the unmeasured dead time
+                let n = Math.round(S.targetMass / (S.rho * S.qRough * t * 0.85));
+                n = Math.max(3, Math.min(200, n));
+                return { t: t, n: n, masses: Array(S.reps).fill(null) };
+            });
+            save();
+        }
+
+        function renderStage1() {
+            document.getElementById('stage1-top').innerHTML =
+                `(t<sub>op</sub> = ${S.step} / ${S.qRough.toFixed(4)} = ${(S.step / S.qRough).toFixed(3)} s)`;
+            const tbody = document.getElementById('stage1-rows');
+            tbody.innerHTML = '';
+            S.sheet.forEach((row, ri) => {
+                const estMass = (S.rho * S.qRough * row.t * row.n * 0.85).toFixed(1);
+                row.masses.forEach((m, rep) => {
+                    tbody.innerHTML += `<tr>
+                        ${rep === 0 ? `<td rowspan="${row.masses.length}">${row.t.toFixed(3)}</td>
+                        <td rowspan="${row.masses.length}">${row.n}</td>
+                        <td rowspan="${row.masses.length}">~${estMass} g</td>` : ''}
+                        <td>${rep + 1}</td>
+                        <td><button class="btn small" onclick="runTrial(${ri})">Fire</button></td>
+                        <td><input class="narrow" type="number" step="0.001" value="${m ?? ''}"
+                            oninput="trialInput(${ri}, ${rep}, this.value)"></td>
+                    </tr>`;
+                });
+            });
+            updateStage1();
+        }
+
+        async function runTrial(ri) {
+            const row = S.sheet[ri];
+            const statusEl = document.getElementById('stage1-status');
+            try {
+                await firePulses(row.t, row.n, S.gap, statusEl);
+            } catch (e) { /* shown in status */ }
+        }
+
+        function trialInput(ri, rep, val) {
+            S.sheet[ri].masses[rep] = val === '' ? null : parseFloat(val);
+            updateStage1(); save();
+        }
+
+        function updateStage1() {
+            const filled = S.sheet.flatMap(r => r.masses).filter(m => m !== null && m > 0).length;
+            // Fit needs >= 3 points across >= 2 distinct on-times; allow early fit but suggest completeness
+            document.getElementById('stage1-next').disabled = filled < 3;
+        }
+
+        // ---- stage 2: fit ------------------------------------------------
+        function collectTrials() {
+            const trials = [];
+            S.sheet.forEach(row => row.masses.forEach(m => {
+                if (m !== null && m > 0) trials.push([row.t, row.n, m]);
+            }));
+            return trials;
+        }
+
+        async function runFit() {
+            const trials = collectTrials();
+            try {
+                const res = await fetch('/api/pump/calibration/fit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ trials: trials, temp_c: S.temp })
+                });
+                const fit = await res.json();
+                if (fit.error) return alert('Fit failed: ' + fit.error);
+                S.fit = fit; save();
+                renderFit(fit);
+                showStage('stage-2');
+            } catch (e) { alert('Network error during fit'); }
+        }
+
+        function renderFit(fit) {
+            document.getElementById('fit-q').textContent = fit.Q.toFixed(4);
+            document.getElementById('fit-tau').textContent = fit.tau_ms.toFixed(1);
+            document.getElementById('fit-r2').textContent = fit.r2.toFixed(5);
+
+            const rows = [
+                ['R&sup2;', '&gt; 0.999', fit.checks.r2_ok],
+                ['Residual RMS', '&lt; 1% of smallest pulse', fit.checks.resid_ok],
+                ['Replicate SD', '&lt; 0.5% within each row', fit.checks.replicates_ok],
+                ['&tau; sign', '&ge; 0', fit.checks.tau_nonnegative],
+            ];
+            document.getElementById('fit-checks').innerHTML = rows.map(([n, e, ok]) =>
+                `<tr><td>${n}</td><td>${e}</td>
+                 <td class="${ok ? 'check-pass' : 'check-fail'}">${ok ? 'PASS' : 'FAIL'}</td></tr>`
+            ).join('');
+
+            document.getElementById('fit-warnings').innerHTML =
+                fit.warnings.map(w => `<p>&#9888; ${w}</p>`).join('');
+        }
+
+        // ---- auxiliary checks (burst length + gap) -----------------------
+        function setupAux() {
+            if (!S.aux) {
+                const tau = Math.max(0, S.fit.tau);
+                S.aux = {
+                    t: Math.round((S.step / S.fit.Q + tau) * 1000) / 1000,
+                    burstN: [10, 40, 100], burstMass: [null, null, null],
+                    gapN: 20, gaps: [0.2, 5.0], gapMass: [null, null]
+                };
+                save();
+            }
+            renderAux();
+            showStage('stage-aux');
+        }
+
+        function vPulse(mass, n) { return mass / (S.rho * n); }
+
+        function renderAux() {
+            const a = S.aux;
+            document.getElementById('aux-t').textContent = a.t.toFixed(3);
+            document.getElementById('aux-gap-desc').textContent =
+                `${a.t.toFixed(3)} s x ${a.gapN} pulses`;
+
+            const burstBody = document.getElementById('aux-burst-rows');
+            burstBody.innerHTML = '';
+            a.burstN.forEach((n, i) => {
+                const m = a.burstMass[i];
+                burstBody.innerHTML += `<tr>
+                    <td>${n}</td>
+                    <td><button class="btn small" onclick="fireAux('burst', ${i})">Fire</button></td>
+                    <td><input class="narrow" type="number" step="0.001" value="${m ?? ''}"
+                        oninput="auxInput('burst', ${i}, this.value)"></td>
+                    <td>${m ? (vPulse(m, n) * 1000).toFixed(2) + ' µL' : '--'}</td>
+                </tr>`;
+            });
+
+            const gapBody = document.getElementById('aux-gap-rows');
+            gapBody.innerHTML = '';
+            a.gaps.forEach((g, i) => {
+                const m = a.gapMass[i];
+                gapBody.innerHTML += `<tr>
+                    <td>${g}</td>
+                    <td><button class="btn small" onclick="fireAux('gap', ${i})">Fire</button></td>
+                    <td><input class="narrow" type="number" step="0.001" value="${m ?? ''}"
+                        oninput="auxInput('gap', ${i}, this.value)"></td>
+                    <td>${m ? (vPulse(m, a.gapN) * 1000).toFixed(2) + ' µL' : '--'}</td>
+                </tr>`;
+            });
+
+            auxVerdicts();
+        }
+
+        async function fireAux(kind, i) {
+            const a = S.aux;
+            const statusEl = document.getElementById('aux-status');
+            try {
+                if (kind === 'burst') {
+                    await firePulses(a.t, a.burstN[i], S.gap, statusEl);
+                } else {
+                    await firePulses(a.t, a.gapN, a.gaps[i], statusEl);
+                }
+            } catch (e) { /* shown in status */ }
+        }
+
+        function auxInput(kind, i, val) {
+            const v = val === '' ? null : parseFloat(val);
+            if (kind === 'burst') S.aux.burstMass[i] = v; else S.aux.gapMass[i] = v;
+            save();
+            renderAux();
+        }
+
+        function auxVerdicts() {
+            const a = S.aux;
+            const burstEl = document.getElementById('aux-burst-verdict');
+            if (a.burstMass.every(m => m)) {
+                const vs = a.burstMass.map((m, i) => vPulse(m, a.burstN[i]));
+                const mean = vs.reduce((x, y) => x + y, 0) / vs.length;
+                const spreadPct = (Math.max(...vs) - Math.min(...vs)) / mean * 100;
+                const ok = spreadPct < 1.0;
+                burstEl.style.display = 'block';
+                burstEl.style.borderLeftColor = ok ? '#1e8449' : '#c0392b';
+                burstEl.innerHTML = ok
+                    ? `&#10003; Volume/pulse consistent across burst lengths (spread ${spreadPct.toFixed(2)}% &lt; 1%).`
+                    : `&#9888; Spread ${spreadPct.toFixed(2)}% &ge; 1% &mdash; a per-run priming penalty exists. `
+                      + `Calibrate at a burst length close to your real titration${vs[0] < mean ? ' (small-N runs low)' : ''}.`;
+            } else burstEl.style.display = 'none';
+
+            const gapEl = document.getElementById('aux-gap-verdict');
+            if (a.gapMass.every(m => m)) {
+                const v1 = vPulse(a.gapMass[0], a.gapN), v2 = vPulse(a.gapMass[1], a.gapN);
+                const diffPct = Math.abs(v1 - v2) / ((v1 + v2) / 2) * 100;
+                const ok = diffPct < 0.5;
+                gapEl.style.display = 'block';
+                gapEl.style.borderLeftColor = ok ? '#1e8449' : '#c0392b';
+                gapEl.innerHTML = ok
+                    ? `&#10003; Gap-independent (difference ${diffPct.toFixed(2)}% &lt; 0.5%).`
+                    : `&#9888; Difference ${diffPct.toFixed(2)}% &ge; 0.5% &mdash; the pump is still coasting at the `
+                      + `short gap. This calibration is only valid at gap ${S.gap} s.`;
+            } else gapEl.style.display = 'none';
+        }
+
+        // ---- stage 3: verify ---------------------------------------------
+        function setupVerify(rebuilding) {
+            const tau = Math.max(0, S.fit.tau); // negative tau -> use Q alone
+            S.verifyOnTime = S.step / S.fit.Q + tau;
+            S.verifyTarget = S.verifyPulses * S.step * S.rho;
+            if (!rebuilding) { S.verifyMass = null; save(); }
+            document.getElementById('verify-desc').innerHTML =
+                `Dispense the real step through the calibrated timing:
+                 t<sub>step</sub> = ${S.step} / ${S.fit.Q.toFixed(4)} + ${(tau).toFixed(4)}
+                 = <strong>${S.verifyOnTime.toFixed(4)} s</strong>.
+                 Fire <strong>${S.verifyPulses} pulses</strong>;
+                 target mass = ${S.verifyPulses} &times; ${S.step} &times; ${S.rho.toFixed(5)}
+                 = <strong>${S.verifyTarget.toFixed(3)} g</strong>. Pass if within 0.5%.`;
+            if (S.verifyMass !== null) {
+                document.getElementById('verify-mass').value = S.verifyMass;
+                checkVerify();
+            }
+            if (!rebuilding) showStage('stage-3');
+        }
+
+        async function fireVerify() {
+            const statusEl = document.getElementById('verify-status');
+            try {
+                await firePulses(S.verifyOnTime, S.verifyPulses, S.gap, statusEl);
+                document.getElementById('verify-mass').focus();
+            } catch (e) { /* shown in status */ }
+        }
+
+        function checkVerify() {
+            const m = parseFloat(document.getElementById('verify-mass').value);
+            const resEl = document.getElementById('verify-result');
+            const saveBtn = document.getElementById('verify-save');
+            if (isNaN(m) || m <= 0) { resEl.style.display = 'none'; saveBtn.disabled = true; return; }
+            S.verifyMass = m; save();
+            const errPct = (m - S.verifyTarget) / S.verifyTarget * 100;
+            const pass = Math.abs(errPct) <= 0.5;
+            resEl.style.display = 'block';
+            resEl.className = 'status ' + (pass ? 'ok' : 'bad');
+            resEl.innerHTML = `${m.toFixed(3)} g vs target ${S.verifyTarget.toFixed(3)} g
+                &rarr; <strong>${errPct >= 0 ? '+' : ''}${errPct.toFixed(2)}%</strong>
+                ${pass ? '&mdash; PASS' : '&mdash; FAIL (re-check burst length / gap, see Stage 2 notes)'}`;
+            saveBtn.disabled = false;
+            saveBtn.textContent = pass ? 'Save Calibration' : 'Save Anyway (verification failed)';
+        }
+
+        async function saveCalibration() {
+            const tau = Math.max(0, S.fit.tau);
+            const payload = {
+                Q: S.fit.Q, tau: tau, step_volume: S.step,
+                temp_c: S.temp, gap: S.gap,
+                r2: Number(S.fit.r2.toFixed(5)),
+                resid_rms_ul: Number(S.fit.resid_rms_ul.toFixed(2)),
+                raw: collectTrials()
+            };
+            await doSave(payload,
+                `Q = ${S.fit.Q.toFixed(4)} mL/s, &tau; = ${(tau * 1000).toFixed(1)} ms, ` +
+                `step ${S.step} mL, R&sup2; = ${S.fit.r2.toFixed(5)}`);
+        }
+
+        // ---- quick re-cal ------------------------------------------------
+        function startQuick() {
+            S.quick = {
+                qOld: storedCal.PUMP_FLOW_RATE_MLS,
+                tau: storedCal.PUMP_DEAD_TIME_S || 0,
+                passes: []
+            };
+            S.step = storedCal.PUMP_CAL_STEP_VOLUME_ML || storedCal.VOLUME_PER_STEP;
+            S.gap = storedCal.PUMP_CAL_GAP_S ?? 0.3;
+            S.temp = storedCal.PUMP_CAL_TEMP_C ?? 25.0;
+            S.rho = densityFor(S.temp);
+            S.verifyPulses = 100;
+            save();
+            renderQuick();
+            showStage('stage-quick');
+        }
+
+        function renderQuick() {
+            const q = currentQuickQ();
+            document.getElementById('quick-desc').innerHTML =
+                `Fire <strong>${S.verifyPulses} injections at the normal step setting</strong>
+                 (${S.step} mL &rarr; on-time ${(S.step / q + S.quick.tau).toFixed(4)} s), weigh, and the
+                 wizard updates Q &larr; Q &times; (measured mL/pulse) / ${S.step}. Repeat once.`;
+            const area = document.getElementById('quick-pass-area');
+            area.innerHTML = '';
+            const nPasses = Math.min(S.quick.passes.length + 1, 2);
+            for (let p = 0; p < nPasses; p++) {
+                const done = S.quick.passes[p];
+                area.innerHTML += `<div style="margin-top:12px;">
+                    <strong>Pass ${p + 1}</strong>
+                    <div style="display:flex; gap:10px; align-items:end;">
+                        <button class="btn" onclick="fireQuick(${p})" ${done ? 'disabled' : ''}>Fire</button>
+                        <div style="flex:1;">
+                            <label>Measured mass (g)</label>
+                            <input class="narrow" type="number" step="0.001"
+                                value="${done ? done.mass : ''}" ${done ? 'disabled' : ''}
+                                onchange="quickMass(${p}, this.value)">
+                        </div>
+                        <div>${done ? `Q &rarr; <strong>${done.qNew.toFixed(4)}</strong> mL/s` : ''}</div>
+                    </div></div>`;
+            }
+            document.getElementById('quick-save').disabled = S.quick.passes.length < 1;
+        }
+
+        function currentQuickQ() {
+            const last = S.quick.passes[S.quick.passes.length - 1];
+            return last ? last.qNew : S.quick.qOld;
+        }
+
+        async function fireQuick(p) {
+            const q = currentQuickQ();
+            const onTime = S.step / q + S.quick.tau;
+            const statusEl = document.getElementById('quick-status');
+            try {
+                await firePulses(onTime, S.verifyPulses, S.gap, statusEl);
+            } catch (e) { /* shown */ }
+        }
+
+        function quickMass(p, val) {
+            const m = parseFloat(val);
+            if (isNaN(m) || m <= 0) return;
+            const q = currentQuickQ();
+            const vMeasured = m / (S.rho * S.verifyPulses); // mL per pulse
+            const qNew = q * vMeasured / S.step;
+            S.quick.passes[p] = { mass: m, qNew: qNew };
+            save();
+            renderQuick();
+        }
+
+        async function saveQuick() {
+            const qNew = currentQuickQ();
+            await doSave(
+                { Q: qNew, tau: null, step_volume: S.step, temp_c: S.temp, gap: S.gap },
+                `Q updated: ${S.quick.qOld.toFixed(4)} &rarr; ${qNew.toFixed(4)} mL/s
+                 (step ${S.step} mL, &tau; unchanged)`);
+        }
+
+        // ---- save --------------------------------------------------------
+        async function doSave(payload, summaryHtml) {
+            try {
+                const res = await fetch('/api/pump/calibration/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (data.error) return alert('Save failed: ' + data.error);
+                localStorage.removeItem(LS_KEY);
+                document.getElementById('done-summary').innerHTML =
+                    summaryHtml + `<br>Step on-time: ${data.on_time} s`;
+                showStage('stage-done');
+                localStorage.removeItem(LS_KEY);
+            } catch (e) { alert('Network error during save'); }
         }
     </script>
 </body>
