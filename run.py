@@ -2,6 +2,14 @@
 import sys
 import os
 
+# Load .env from the project root (e.g. TITRATOR_ENV=PROD on the instrument)
+# BEFORE importing the app, so hardware initialization sees it.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
+except ImportError:
+    pass  # python-dotenv not installed; rely on shell environment variables
+
 # Add src to python path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
