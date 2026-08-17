@@ -13,3 +13,7 @@ src/logs/
 
 # Claude Code local config
 .claude/
+
+# Live instrument state (calibrations, presets) - written by the app at runtime.
+# Defaults live in src/utils.py DEFAULT_SETTINGS; never track this file.
+config.json
