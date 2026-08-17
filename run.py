@@ -17,4 +17,8 @@ from src.app import app
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    # Debug mode (auto-reloader) stat-scans the whole project tree every
+    # second - a significant, constant CPU/IO load on a Raspberry Pi SD card.
+    # Only enable it in development.
+    debug = os.environ.get('TITRATOR_ENV', 'DEV') != 'PROD'
+    app.run(host='0.0.0.0', port=port, debug=debug, threaded=True)

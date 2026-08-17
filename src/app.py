@@ -56,6 +56,10 @@ buffer_handler.setLevel(logging.INFO)
 logging.basicConfig(level=logging.INFO, handlers=[file_handler, console_handler, buffer_handler])
 logger = logging.getLogger(__name__)
 
+# Access-log lines (one per poll request, several per second) drown the
+# console and the in-app log buffer on the Pi; keep only warnings/errors.
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
+
 app = Flask(__name__)
 
 # Initialize Hardware & Engine
@@ -149,52 +153,65 @@ def status_api():
     })
 
 # --- Probe value cache -------------------------------------------------------
-# Each real Atlas read blocks the I2C bus for ~2s, so display polling (status
-# bar, calibration pages) is throttled through this cache. While a titration
-# or single measurement owns the bus, only cached values are served.
+# Each real Atlas read blocks the I2C bus for ~2s. A single background poller
+# thread owns all display reads and keeps this cache warm; HTTP endpoints ONLY
+# read the cache, so status/polling responses are always instant and can never
+# pile up behind the bus. While a titration or single measurement owns the
+# bus, the poller pauses and live values come from that activity's own cache.
 _probe_cache = {}
 _probe_cache_lock = threading.Lock()
-PROBE_CACHE_TTL = 3.0
+
+def _cache_put(probe_type, value):
+    with _probe_cache_lock:
+        _probe_cache[probe_type] = {'value': float(value), 'ts': time.monotonic()}
+
+def _probe_poller():
+    """Daemon loop: round-robin one probe per iteration, only while idle."""
+    hw = get_hardware()
+    probes = ['ph', 'ec', 'temp']
+    idx = 0
+    period = float(get_setting('PROBE_POLL_GAP', 1.0))
+    while True:
+        try:
+            if engine.running or single_measurement.running or pulse_runner.running:
+                time.sleep(1.0)
+                continue
+            ptype = probes[idx % len(probes)]
+            idx += 1
+            probe = hw.get_probe(ptype)
+            if probe:
+                with hw.bus_lock:
+                    # Re-check: an activity may have started while we waited
+                    if not (engine.running or single_measurement.running):
+                        val = probe.read()
+                        if val is not None:
+                            _cache_put(ptype, val)
+            time.sleep(period)
+        except Exception as e:
+            logger.warning(f"Probe poller error: {e}")
+            time.sleep(2.0)
+
+_poller_thread = threading.Thread(target=_probe_poller, daemon=True,
+                                  name="probe-poller")
+_poller_thread.start()
 
 def _get_probe_value(probe_type):
-    """Last-known value for a probe. Reads hardware only when the system is
-    idle and the cached value is older than PROBE_CACHE_TTL.
+    """Last-known value for a probe, from the poller cache or the cache of
+    whatever activity currently owns the bus. NEVER touches hardware.
     Returns (value_or_None, cached: bool)."""
-    now = time.monotonic()
-
-    # Bus is owned by a running process: serve caches only
-    if engine.running or single_measurement.running:
-        if single_measurement.running:
-            data = single_measurement.get_data()
-            if data['sensor'] == probe_type and single_measurement.last_value is not None:
-                return single_measurement.last_value, True
-        if engine.running:
-            if probe_type == 'ph':
-                return engine._last_ph, True
-            if probe_type == 'ec':
-                return engine._last_ec, True
-        cached = _probe_cache.get(probe_type)
-        return (cached['value'] if cached else None), True
+    if single_measurement.running:
+        data = single_measurement.get_data()
+        if data['sensor'] == probe_type and single_measurement.last_value is not None:
+            return single_measurement.last_value, True
+    if engine.running:
+        if probe_type == 'ph':
+            return engine._last_ph, True
+        if probe_type == 'ec':
+            return engine._last_ec, True
 
     with _probe_cache_lock:
         cached = _probe_cache.get(probe_type)
-        if cached and now - cached['ts'] < PROBE_CACHE_TTL:
-            return cached['value'], True
-
-        probe = get_hardware().get_probe(probe_type)
-        if not probe:
-            return None, False
-        try:
-            val = probe.read()
-        except Exception as e:
-            logger.warning(f"Probe read failed for {probe_type}: {e}")
-            val = None
-
-        if val is not None:
-            _probe_cache[probe_type] = {'value': float(val), 'ts': now}
-            return float(val), False
-        # Read failed: fall back to stale cache if we have one
-        return (cached['value'] if cached else None), True
+    return (cached['value'] if cached else None), True
 
 @app.route('/api/status')
 def api_status():
@@ -560,7 +577,8 @@ def _run_probe_calibration(probe_type, cal_type, value):
     if not probe:
         return jsonify({'error': f'{probe_type.upper()} probe not initialized'}), 500
 
-    response = probe.calibrate(cal_type, value)
+    with hw.bus_lock:
+        response = probe.calibrate(cal_type, value)
 
     # Per-device calibration date (clear does not count as a calibration)
     if cal_type != 'clear':
@@ -630,11 +648,13 @@ def probe_health_api(probe_type):
     if busy:
         return jsonify({'error': f'Probe busy: {busy}'}), 409
 
-    probe = get_hardware().get_probe(probe_type)
+    hw = get_hardware()
+    probe = hw.get_probe(probe_type)
     if not probe:
         return jsonify({'error': f'{probe_type.upper()} probe not initialized'}), 500
     try:
-        health = probe.get_health()
+        with hw.bus_lock:
+            health = probe.get_health()
         health['cal_date'] = get_setting(_CAL_DATE_KEYS[probe_type])
         return jsonify(health)
     except Exception as e:
@@ -646,9 +666,9 @@ def probe_read_api(probe_type):
     if probe_type not in ('ph', 'ec', 'temp'):
         return jsonify({'error': 'Unknown probe type'}), 400
 
+    # value is None until the background poller has a reading (or the probe
+    # is absent); clients render that as "--"
     value, cached = _get_probe_value(probe_type)
-    if value is None:
-        return jsonify({'error': f'{probe_type.upper()} probe not available'}), 500
     return jsonify({'value': value, 'cached': cached})
 
 @app.route('/api/measure/start', methods=['POST'])

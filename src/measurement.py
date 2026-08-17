@@ -81,17 +81,22 @@ class SingleMeasurement:
         if self._sensor == 'temp':
             return
         try:
-            temp_probe = get_hardware().get_temp_probe()
+            hw = get_hardware()
+            temp_probe = hw.get_temp_probe()
             if temp_probe:
-                temp = temp_probe.read()
+                with hw.bus_lock:
+                    temp = temp_probe.read()
                 if temp is not None:
-                    probe.set_temp_compensation(temp)
+                    with hw.bus_lock:
+                        probe.set_temp_compensation(temp)
         except Exception as e:
             logger.warning(f"Temperature compensation skipped: {e}")
 
     def _run(self, probe):
         interval = float(get_setting('MEASUREMENT_POLL_INTERVAL', 1.0))
+        min_time = float(get_setting('MEASUREMENT_MIN_TIME', 10.0))
         window, thresh_fn = self._thresholds()
+        hw = get_hardware()
         self._apply_temp_compensation(probe)
         t0 = time.monotonic()
 
@@ -101,7 +106,8 @@ class SingleMeasurement:
                 if elapsed >= self._duration:
                     break
 
-                value = probe.read()
+                with hw.bus_lock:
+                    value = probe.read()
                 elapsed = time.monotonic() - t0  # reading can block ~2s on real HW
 
                 if value is not None:
@@ -110,20 +116,28 @@ class SingleMeasurement:
                         self._values.append(float(value))
                         self.last_value = float(value)
 
-                    # Plateau check on the last `window` readings
+                    # Plateau check on the last `window` readings. Stability
+                    # requires ALL of: a minimum elapsed time (electrodes
+                    # drift slowly at first contact), low scatter (std), and
+                    # low drift across the window (std alone cannot tell a
+                    # slow monotonic drift from true stability).
                     with self._lock:
                         tail = self._values[-window:]
-                    if len(tail) >= window:
+                    if len(tail) >= window and elapsed >= min_time:
                         mean = float(np.mean(tail))
                         std = float(np.std(tail))
-                        if std < thresh_fn(mean):
+                        half = max(1, window // 2)
+                        drift = abs(float(np.mean(tail[-half:])) -
+                                    float(np.mean(tail[:half])))
+                        threshold = thresh_fn(mean)
+                        if std < threshold and drift < threshold:
                             with self._lock:
                                 self._result = mean
                                 self._stable = True
                                 self._stable_at = round(elapsed, 1)
                             logger.info(
                                 f"Plateau detected at {elapsed:.1f}s: "
-                                f"{mean:.3f} (std {std:.4f})")
+                                f"{mean:.3f} (std {std:.4f}, drift {drift:.4f})")
                             return
 
                 # Pace to ~interval between reads (read time already elapsed)

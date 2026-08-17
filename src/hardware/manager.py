@@ -2,6 +2,7 @@
 import os
 import logging
 import atexit
+import threading
 from .pump import RealPump, MockPump
 from .probes import PHProbe, ConductivityProbe, TemperatureProbe, MockProbe
 
@@ -17,6 +18,11 @@ class HardwareManager:
         self.ph_probe = None
         self.ec_probe = None
         self.temp_probe = None
+        # Serializes every I2C transaction. Each Atlas read blocks the bus
+        # ~2s; two threads interleaving transactions corrupt each other's
+        # responses (error 254 / garbage). Every probe read/command anywhere
+        # in the app must hold this lock.
+        self.bus_lock = threading.Lock()
 
     def init_hardware(self):
         self.env = os.environ.get('TITRATOR_ENV', 'DEV')

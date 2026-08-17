@@ -122,7 +122,8 @@ class TitrationEngine:
         if not temp_probe or probe is temp_probe:
             return None
         try:
-            temp = temp_probe.read()
+            with self.hw.bus_lock:
+                temp = temp_probe.read()
         except Exception as e:
             logger.warning(f"Temperature read for compensation failed: {e}")
             return None
@@ -130,7 +131,8 @@ class TitrationEngine:
             logger.warning("Temperature compensation skipped: no RTD reading")
             return None
         try:
-            probe.set_temp_compensation(temp)
+            with self.hw.bus_lock:
+                probe.set_temp_compensation(temp)
             return float(temp)
         except Exception as e:
             logger.warning(f"Failed to set temperature compensation: {e}")
@@ -451,7 +453,8 @@ class TitrationEngine:
         for _ in range(count):
             if self.stop_signal:
                 break
-            value = probe.read()
+            with self.hw.bus_lock:
+                value = probe.read()
             if value is not None:  # Only include valid readings
                 readings.append(value)
                 # Cache latest reading for status endpoint

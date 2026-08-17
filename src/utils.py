@@ -24,6 +24,8 @@ DEFAULT_SETTINGS = {
     'PH_READINGS': 5,
     'CONDUCTIVITY_READ_DELAY': 0.1,
     'MEASUREMENT_POLL_INTERVAL': 1.0,
+    'MEASUREMENT_MIN_TIME': 10.0,   # no plateau declared before this many seconds
+    'PROBE_POLL_GAP': 1.0,          # idle-poller pause between probe reads
     'STABILITY_WINDOW': 5,
     'PH_STABILITY_THRESHOLD': 0.02,
     'EC_STABILITY_THRESHOLD_PCT': 1.0,

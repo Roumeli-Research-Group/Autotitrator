@@ -14,10 +14,20 @@ class TestStatus:
         assert data['env'] == 'DEV'
 
     def test_probe_read_valid_types(self, client):
-        for probe in ('ph', 'ec', 'temp'):
-            res = client.get(f'/api/probe_read/{probe}')
-            assert res.status_code == 200
-            assert res.get_json()['value'] is not None
+        # Values come from the background poller (round-robin, ~1s per probe),
+        # so wait for the cache to warm rather than expecting inline reads.
+        import time
+        deadline = time.monotonic() + 8.0
+        pending = {'ph', 'ec', 'temp'}
+        while pending and time.monotonic() < deadline:
+            for probe in list(pending):
+                res = client.get(f'/api/probe_read/{probe}')
+                assert res.status_code == 200
+                if res.get_json()['value'] is not None:
+                    pending.discard(probe)
+            if pending:
+                time.sleep(0.3)
+        assert not pending, f"poller never produced readings for: {pending}"
 
     def test_probe_read_unknown_type(self, client):
         assert client.get('/api/probe_read/orp').status_code == 400

@@ -184,19 +184,47 @@
             });
             const data = await res.json();
             if (data.error) {
+                // A measurement is already running (e.g. this session was
+                // orphaned by an earlier fetch error): attach to it.
+                if (data.error.includes('measurement is in progress') ||
+                    data.error.includes('already in progress')) {
+                    attachToRunningMeasurement();
+                    return;
+                }
                 showMeasureError(data.error);
                 return;
             }
         } catch (e) {
-            showMeasureError('Network Error');
+            // The start may still have gone through - check before giving up
+            attachToRunningMeasurement(true);
             return;
         }
 
+        enterMeasuringState();
+    }
+
+    function enterMeasuringState() {
+        const btn = document.getElementById('measureBtn');
         measuring = true;
         btn.textContent = 'Stop';
         btn.classList.remove('btn-primary');
         btn.classList.add('btn-danger');
-        pollTimer = setInterval(pollMeasurement, 1000);
+        if (!pollTimer) pollTimer = setInterval(pollMeasurement, 1000);
+    }
+
+    async function attachToRunningMeasurement(showErrorIfIdle) {
+        try {
+            const res = await fetch('/api/measure/data');
+            const data = await res.json();
+            if (data.running) {
+                document.getElementById('single_sensor_select').value = data.sensor;
+                initMeasureChart(data.sensor);
+                enterMeasuringState();
+                pollMeasurement();
+                return;
+            }
+        } catch (e) { /* fall through */ }
+        if (showErrorIfIdle) showMeasureError('Network Error');
     }
 
     async function pollMeasurement() {
@@ -273,12 +301,7 @@
                 document.getElementById('single_sensor_select').value = data.sensor;
                 if (data.duration) document.getElementById('single_duration').value = data.duration;
                 initMeasureChart(data.sensor);
-                measuring = true;
-                const btn = document.getElementById('measureBtn');
-                btn.textContent = 'Stop';
-                btn.classList.remove('btn-primary');
-                btn.classList.add('btn-danger');
-                pollTimer = setInterval(pollMeasurement, 1000);
+                enterMeasuringState();
                 pollMeasurement();
             }
         } catch (e) { /* no active measurement */ }
